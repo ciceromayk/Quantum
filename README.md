@@ -74,9 +74,12 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
 - Soma piso e teto por código. Usa a área do contorno do ambiente quando existe uma polilinha
   fechada que bate com o rótulo; senão, usa a área declarada no rótulo e avisa.
 - Parede = perímetro do contorno × altura do revestimento. A altura **não é presumida**: informe
-  `altura_parede_<código>` em metros, ou `teto` para usar o pé-direito. A leitura das alturas a
-  partir dos cortes está em desenvolvimento. Alturas tiradas de cortes valem só para os
-  ambientes cortados e precisam de conferência.
+  `altura_parede_<código>` em metros, ou `teto` para usar o pé-direito, ou envie cortes com
+  `--corte corte.dxf`. No corte, o revestimento é a hachura de padrão GRELHA/cerâmica/porcelanato
+  na parede vista; a altura vai do piso acabado até a laje ou forro cortado, e o ambiente é o nome
+  escrito na faixa. **Alturas tiradas de cortes valem só para os ambientes cortados e precisam de
+  conferência.** A altura do corte vale para o ambiente da planta com o mesmo nome; se o mesmo
+  nome aparece com alturas diferentes, nenhuma é usada.
 - Gera um **DXF novo** (`<arquivo>_acabamentos.dxf`) com polilinhas fechadas nas camadas
   `QTD-PISO-xx`, `QTD-PAREDE-xx` e `QTD-TETO-xx`. O original não é alterado.
 

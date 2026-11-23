@@ -30,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--regras", help="YAML de regras de camadas (padrão: regras_padrao.yaml do pacote)")
     a.add_argument("--unidade", choices=["mm", "cm", "dm", "m"], help="Sobrepõe o $INSUNITS do desenho")
     a.add_argument("--param", action="append", metavar="NOME=VALOR", help="Parâmetro em metros, ex.: pe_direito=2.80 ou altura_parede_01=teto")
+    a.add_argument("--corte", action="append", help="DXF de corte/vista para ler alturas de revestimento (pode repetir)")
     a.add_argument("--precos", help="Tabela de preços CSV (;) para gerar o orçamento")
     a.add_argument("--bdi", type=float, help="BDI em %% (só se informado)")
     a.add_argument("--disciplina", action="append", help="Limita a disciplinas: layout, estrutural, eletrica, hidraulica, acabamentos")
@@ -46,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
             tabela_precos=args.precos,
             bdi=args.bdi,
             disciplinas=args.disciplina,
+            cortes=args.corte,
         )
     except (ErroIngestao, ValueError) as exc:
         print(f"Erro: {exc}", file=sys.stderr)

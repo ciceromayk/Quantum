@@ -49,6 +49,10 @@ class Ambiente:
     perimetro_m: float | None = None
 
 
+def _chave(nome: str) -> str:
+    return re.sub(r"\s+", " ", nome).strip().upper()
+
+
 def _m2(v: float) -> str:
     return f"{v:.2f}".replace(".", ",") + " m²"
 
@@ -58,9 +62,11 @@ def _perimetro(pts: list[tuple[float, float]]) -> float:
 
 
 class AgenteAcabamentos:
-    def __init__(self, config: dict, parametros: dict | None = None):
+    def __init__(self, config: dict, parametros: dict | None = None, alturas_corte: dict[str, float] | None = None):
         self.cfg = config or {}
         self.par = parametros or {}
+        # nome do ambiente (normalizado) -> altura de revestimento lida em corte, em m
+        self.alturas_corte = {_chave(k): v for k, v in (alturas_corte or {}).items()}
         self.posicoes: dict[str, str] = self.cfg.get("etiqueta") or {}
         self.dist_max_m = float(self.cfg.get("distancia_max_etiqueta_m", 1.0))
         self.tol_area = float(self.cfg.get("tolerancia_area_contorno", 0.05))
@@ -258,20 +264,32 @@ class AgenteAcabamentos:
         out = []
         for cod in sorted(grupos):
             amb = grupos[cod]
-            h = self._altura(cod)
+            h_cod = self._altura(cod)
+            alturas: dict[str, tuple[float, str]] = {}  # handle -> (altura, origem)
+            for a in amb:
+                hc = self.alturas_corte.get(_chave(a.nome))
+                if hc is not None:
+                    alturas[a.handle] = (hc, "corte")
+                elif h_cod is not None:
+                    alturas[a.handle] = (h_cod, "informada")
+            sem_altura = [a for a in amb if a.handle not in alturas]
             medidos = [a for a in amb if a.perimetro_m is not None]
             q = None
-            if h is not None and medidos and len(medidos) == len(amb):
-                q = round(sum(a.perimetro_m for a in amb) * h, 4)
-            if h is None:
+            if not sem_altura and len(medidos) == len(amb):
+                q = round(sum(a.perimetro_m * alturas[a.handle][0] for a in amb), 4)
+            if sem_altura:
+                nomes = ", ".join(sorted({a.nome for a in sem_altura}))[:200]
                 pend.append(Pendencia(
                     DISC, Severidade.BLOQUEANTE,
-                    f"Parede {cod}: altura do revestimento não informada.",
-                    acao_sugerida=f"Envie os cortes ou informe altura_parede_{cod} (m, ou 'teto' com o pé-direito).",
+                    f"Parede {cod}: altura do revestimento não informada para {len(sem_altura)} ambiente(s) ({nomes}).",
+                    acao_sugerida=f"Envie o corte desses ambientes ou informe altura_parede_{cod} (m, ou 'teto' com o pé-direito).",
                 ))
             obs = f"{len(amb)} ambiente(s). Perímetro do contorno × altura, sem descontar vãos de portas e janelas."
             if len(medidos) < len(amb):
                 obs = f"{len(amb) - len(medidos)} de {len(amb)} ambiente(s) sem contorno: área não medida."
+            de_corte = sorted({f"{a.nome} {alturas[a.handle][0]:.2f} m".replace(".", ",") for a in amb if alturas.get(a.handle, (0, ""))[1] == "corte"})
+            if de_corte:
+                obs += " Altura lida do corte (conferir): " + "; ".join(de_corte) + "."
             out.append(ItemQuantitativo(
                 disciplina=DISC, codigo=f"ACB-PAREDE-{cod}",
                 descricao=f"Parede {cod}: {catalogo.get('parede', {}).get(cod, 'código fora do quadro')}",

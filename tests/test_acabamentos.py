@@ -86,3 +86,45 @@ def test_gera_dxf_novo_sem_alterar_original(tmp_path):
     assert novo.layers.get("QTD-PAREDE-02").description == "PAREDE DOIS"
     with pytest.raises(ValueError):
         gerar_dxf_acabamentos(arq, rel.acabamentos, arq)
+
+
+def criar_corte(caminho):
+    """Corte em metros: BANHO com porcelanato (GRELHA) do piso até a laje, bancada a 0,82 m."""
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+
+    def hachura(padrao, x0, y0, x1, y1):
+        h = msp.add_hatch(dxfattribs={"layer": "HATCH 1"})
+        h.set_pattern_fill(padrao, scale=0.1)
+        h.paths.add_polyline_path([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], is_closed=True)
+
+    hachura("CONCRETO_0002", -1, -0.07, 5, 0)  # contrapiso
+    hachura("GRELHA_60X60_0002", 0, 0, 2, 0.82)
+    hachura("GRELHA_60X60_0002", 0, 0.94, 2, 2.99)
+    hachura("CONCRETO_CIA_0002", -1, 2.49, 5, 2.99)  # laje + forro em corte
+    hachura("CONCRETO_0002", -1, 2.99, 5, 3.06)  # piso do andar de cima
+    hachura("GRELHA_60X60_0002", 0, 3.06, 2, 6.05)  # andar de cima, sem nome: ignorado
+    msp.add_mtext("BANHO", dxfattribs={"insert": (1, 1.5), "layer": "TEXTO"})
+    msp.add_mtext("+3,06 (P.O.)", dxfattribs={"insert": (4, 3.1), "layer": "COTA"})
+    doc.saveas(caminho)
+
+
+def test_le_altura_do_corte(tmp_path):
+    from quantum.cortes import ler_alturas_corte
+
+    corte = tmp_path / "corte.dxf"
+    criar_corte(corte)
+    alt = ler_alturas_corte(corte)
+    assert len(alt) == 1
+    assert alt[0].ambiente == "BANHO"
+    assert alt[0].altura_m == pytest.approx(2.49)
+    assert alt[0].interrupcoes == [(0.82, 0.94)]
+
+    planta = tmp_path / "acab.dxf"
+    criar_planta_acabamentos(planta)
+    rel = analisar(planta, cortes=[corte])
+    it = _ac(rel)
+    assert it["ACB-PAREDE-01"].quantidade == pytest.approx(7 * 2.49)  # BANHO, parede 01
+    assert "corte" in it["ACB-PAREDE-01"].observacao
+    assert it["ACB-PAREDE-02"].quantidade is None  # SALA não aparece no corte
