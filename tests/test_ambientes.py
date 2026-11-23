@@ -109,3 +109,21 @@ def test_dxf_gerado_separa_divisa_proposta(tmp_path):
     msp = ezdxf.readfile(saida).modelspace()
     assert len(msp.query('LWPOLYLINE[layer=="QTD-PISO-01-PROPOSTA"]')) == 2
     assert len(msp.query('LWPOLYLINE[layer=="QTD-PISO-01"]')) == 3  # quarto, cozinha, serviço
+
+
+def test_muitos_pedacos_de_projecao_nao_viram_divisa_proposta(tmp_path):
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    _quadro(msp)
+    _paredes(msp, 0, 0, 10, 2)
+    for x in range(1, 10):  # 6 pedaços para SALA (12 m²) e 4 para VARANDA (8 m²)
+        msp.add_line((x, 0), (x, 2), dxfattribs={"layer": "PROJ"})
+    _rotulo(doc, msp, "SALA", 12.0, 3.0, 1.0)
+    _rotulo(doc, msp, "VARANDA", 8.0, 8.0, 1.0)
+    arq = tmp_path / "pedacos.dxf"
+    doc.saveas(arq)
+    a = _amb(analisar(arq))
+    assert a["SALA"]["contorno_origem"] == "divisao"
+    assert a["SALA"]["area_contorno_m2"] == pytest.approx(12.0, rel=0.01)
+    assert a["VARANDA"]["area_contorno_m2"] == pytest.approx(8.0, rel=0.01)

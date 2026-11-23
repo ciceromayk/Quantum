@@ -271,6 +271,27 @@ def detectar(
         if len(labs) == 2:
             i1, i2 = labs
             a1, a2 = rotulos[i1][1], rotulos[i2][1]
+            # antes de propor uma reta, tenta repartir os pedaços de projeção restantes entre os dois
+            resto = [k for k in range(len(pecas)) if k not in tomadas]
+            if 2 <= len(resto) <= cfg["max_pecas"] and erro(espaco.area, a1 + a2) <= tol_area:
+                melhor = None
+                for mask in range(1, 2 ** len(resto) - 1):
+                    lado1 = [resto[b] for b in range(len(resto)) if mask >> b & 1]
+                    lado2 = [k for k in resto if k not in lado1]
+                    u1 = union_all([pecas[k] for k in lado1], grid_size=grade)
+                    u2 = union_all([pecas[k] for k in lado2], grid_size=grade)
+                    if u1.geom_type != "Polygon" or u2.geom_type != "Polygon":
+                        continue
+                    e1, e2 = erro(u1.area, a1), erro(u2.area, a2)
+                    if e1 <= tol_area and e2 <= tol_area and u1.distance(pts[i1]) <= u2.distance(pts[i1]) \
+                            and u2.distance(pts[i2]) <= u1.distance(pts[i2]) and (melhor is None or e1 + e2 < melhor[0]):
+                        melhor = (e1 + e2, u1, u2, e1, e2)
+                if melhor:
+                    _, u1, u2, e1, e2 = melhor
+                    out[i1] = Contorno(list(u1.exterior.coords), u1.area, "divisao", e1, _junto(u1, p, tol))
+                    out[i2] = Contorno(list(u2.exterior.coords), u2.area, "divisao", e2, _junto(u2, p, tol))
+                    usados.add(j)
+                    continue
             if erro(espaco.area, a1 + a2) <= tol_area:
                 r = _divisa_proposta(espaco, a1, a2, pts[i1], pts[i2])
                 if r:
