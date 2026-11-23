@@ -1,0 +1,161 @@
+# Regras de classificação de camadas e itens de quantitativo do Quantum.
+#
+# Cada disciplina tem uma lista de itens. Um item casa entidades por:
+#   camadas: expressões regulares (sem diferenciar maiúsculas) aplicadas ao nome da camada
+#   blocos:  expressões regulares aplicadas ao nome do bloco (só para medida: contagem)
+# medida: contagem (blocos/INSERT) | comprimento (m) | area (m², só geometria fechada)
+#
+# derivados: quantidades que dependem de um PARÂMETRO que o desenho 2D não contém
+# (pé-direito, altura de pilar, espessura de laje...). O Quantum não presume esses
+# valores: sem o parâmetro (--param nome=valor), o item sai sem quantidade e vira pendência.
+#
+# Estas regras seguem nomes de camada comuns em escritórios brasileiros. Ajuste ao
+# padrão de layers do seu escritório (copie este arquivo e use --regras).
+
+ignorar_camadas:
+  - "^0$"
+  - "DEFPOINTS"
+  - "COTA|DIM"
+  - "TEXTO|TEXT|NOTA"
+  - "WIPEOUT|MASCARA"
+  - "CARIMBO|SELO|FOLHA|MOLDURA|LEGENDA"
+  - "HACH|HATCH"
+  - "EIXO|GRID"
+  - "VP|VIEWPORT|JANELA[-_ ]?VISTA"
+
+disciplinas:
+  layout:
+    nome: Arquitetura / Layout
+    itens:
+      - codigo: ARQ-AMBIENTES
+        descricao: Área de piso por ambiente
+        camadas: ["AMBIENTE|AREA[-_ ]?UTIL|PISO$|ARQ[-_ ]?AREA"]
+        medida: area
+        rotular_por_texto: true   # usa o TEXT/MTEXT dentro do polígono como nome do ambiente
+      - codigo: ARQ-AMBIENTES-ROTULO
+        descricao: Área de ambiente declarada no rótulo (nome + área escritos no projeto)
+        camadas: ["TEXTO|TEXT|R[OÓ]TULO|AMBIENTE|NOME"]
+        medida: area_rotulo
+        observacao: >-
+          Valor escrito pelo projetista, não medido na geometria. Confira com o quadro de
+          áreas do projeto.
+      - codigo: ARQ-PAREDES
+        descricao: Comprimento de paredes (linhas na camada de alvenaria)
+        camadas: ["PAREDE|ALVENARIA|ARQ[-_ ]?PAR"]
+        medida: comprimento
+        observacao: >-
+          Se as paredes estão desenhadas em linha dupla (as duas faces), este comprimento
+          é aproximadamente o dobro do comprimento de eixo. Confira o padrão do desenho.
+        derivados:
+          - codigo: ARQ-PAREDES-AREA
+            descricao: Área de alvenaria (comprimento × pé-direito, sem descontar vãos)
+            parametro: pe_direito
+            unidade: m²
+      - codigo: ARQ-PORTAS
+        descricao: Portas
+        camadas: ["PORTA|ESQ[-_ ]?P"]
+        medida: contagem
+      - codigo: ARQ-JANELAS
+        descricao: Janelas
+        camadas: ["JANELA|ESQ[-_ ]?J"]
+        medida: contagem
+
+      - codigo: ARQ-ESQUADRIAS
+        descricao: Esquadrias por tipo de bloco
+        camadas: ["^ESQ$|ESQUADRIA"]
+        medida: contagem
+      - codigo: ARQ-DRYWALL
+        descricao: Linhas de drywall em planta
+        camadas: ["DRY[-_ ]?WALL|ACARTONADO"]
+        medida: comprimento
+        observacao: >-
+          Soma de todas as linhas da camada (faces, montantes e detalhes). NÃO é o
+          comprimento de parede de drywall; use só como ordem de grandeza.
+      - codigo: ARQ-MOBILIARIO
+        descricao: Mobiliário e equipamentos (referência, em geral fora do orçamento de obra)
+        camadas: ["LAYOUT[-_ ]?MOB|MOBILI"]
+        medida: contagem
+
+  estrutural:
+    nome: Estrutural
+    itens:
+      - codigo: EST-PILARES
+        descricao: Pilares (área de seção)
+        camadas: ["PILAR|EST[-_ ]?P(IL)?$"]
+        medida: area
+        contar_elementos: true
+        derivados:
+          - codigo: EST-PILARES-CONCRETO
+            descricao: Volume de concreto de pilares (seção × altura do lance)
+            parametro: altura_pilar
+            unidade: m³
+      - codigo: EST-VIGAS
+        descricao: Comprimento de vigas (linhas na camada de vigas)
+        camadas: ["VIGA|EST[-_ ]?V(IG)?$"]
+        medida: comprimento
+        observacao: >-
+          Vigas costumam ser desenhadas pelas duas faces. Confira se o comprimento
+          corresponde a eixo ou a faces.
+      - codigo: EST-LAJES
+        descricao: Área de lajes (contornos fechados)
+        camadas: ["LAJE|EST[-_ ]?L(AJ)?$"]
+        medida: area
+        derivados:
+          - codigo: EST-LAJES-CONCRETO
+            descricao: Volume de concreto de lajes (área × espessura)
+            parametro: espessura_laje
+            unidade: m³
+
+  eletrica:
+    nome: Elétrica
+    itens:
+      - codigo: ELE-TOMADAS
+        descricao: Pontos de tomada
+        camadas: ["TOMADA|ELE[-_ ]?TOM|TUG|TUE"]
+        medida: contagem
+      - codigo: ELE-INTERRUPTORES
+        descricao: Interruptores
+        camadas: ["INTERRUP|ELE[-_ ]?INT"]
+        medida: contagem
+      - codigo: ELE-ILUMINACAO
+        descricao: Pontos de iluminação / luminárias
+        camadas: ["ILUMIN|LUMIN|ELE[-_ ]?LUM"]
+        medida: contagem
+      - codigo: ELE-QUADROS
+        descricao: Quadros de distribuição
+        camadas: ["QUADRO|QDL|QDC|ELE[-_ ]?QD"]
+        medida: contagem
+      - codigo: ELE-ELETRODUTOS
+        descricao: Eletrodutos (comprimento em planta)
+        camadas: ["ELETRODUTO|ELE[-_ ]?ELD|ELE[-_ ]?TUB"]
+        medida: comprimento
+        observacao: >-
+          Comprimento em planta, sem descidas/subidas verticais até os pontos. Some as
+          prumadas e as descidas a partir do pé-direito e das alturas de instalação.
+
+  hidraulica:
+    nome: Hidráulica / Sanitária
+    itens:
+      - codigo: HID-AGUA-FRIA
+        descricao: Tubulação de água fria (comprimento em planta)
+        camadas: ["AGUA[-_ ]?FRIA|HID[-_ ]?AF|^AF[-_ ]"]
+        medida: comprimento
+        observacao: Comprimento em planta, sem trechos verticais e sem conexões.
+      - codigo: HID-AGUA-QUENTE
+        descricao: Tubulação de água quente (comprimento em planta)
+        camadas: ["AGUA[-_ ]?QUENTE|HID[-_ ]?AQ|^AQ[-_ ]"]
+        medida: comprimento
+        observacao: Comprimento em planta, sem trechos verticais e sem conexões.
+      - codigo: HID-ESGOTO
+        descricao: Tubulação de esgoto (comprimento em planta)
+        camadas: ["ESGOTO|SAN[-_ ]?ESG|HID[-_ ]?ES|^ES[-_ ]"]
+        medida: comprimento
+        observacao: Comprimento em planta, sem trechos verticais e sem conexões.
+      - codigo: HID-PLUVIAL
+        descricao: Tubulação de águas pluviais (comprimento em planta)
+        camadas: ["PLUVIAL|HID[-_ ]?AP|^AP[-_ ]"]
+        medida: comprimento
+      - codigo: HID-PECAS
+        descricao: Louças e metais (peças sanitárias)
+        camadas: ["LOUCA|LOUÇA|METAIS|PECA[-_ ]?SANIT|HID[-_ ]?LOU|LAYOUT[-_ ]?WC|SANITARI"]
+        medida: contagem
