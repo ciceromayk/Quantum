@@ -16,6 +16,8 @@ from quantum import analisar
 from quantum.ingestao import ErroIngestao
 from quantum.relatorio import para_json, para_markdown, para_xlsx
 
+from sqlalchemy import update
+
 from .db import Analise, agora
 
 log = logging.getLogger("quantum_api")
@@ -55,3 +57,23 @@ def processar(sessoes: sessionmaker, analise_id: int) -> None:
             analise.erro = f"Erro inesperado ao processar o arquivo: {type(exc).__name__}"
         analise.concluido_em = agora()
         s.commit()
+
+
+def recuperar_interrompidas(sessoes: sessionmaker) -> int:
+    """Na inicialização, nenhuma tarefa em segundo plano sobrevive a um reinício.
+
+    Análises que ficaram "na_fila" ou "processando" viram "erro" com orientação, para
+    que possam ser reprocessadas pela interface em vez de ficarem presas.
+    """
+    with sessoes() as s:
+        r = s.execute(
+            update(Analise)
+            .where(Analise.status.in_(("na_fila", "processando")))
+            .values(
+                status="erro",
+                erro="Processamento interrompido por reinício do servidor. Use Reprocessar.",
+                concluido_em=agora(),
+            )
+        )
+        s.commit()
+        return r.rowcount or 0

@@ -12,7 +12,7 @@ def cliente(tmp_path):
         pasta_arquivos=tmp_path / "arquivos",
         tamanho_max_mb=5,
     )
-    with TestClient(criar_app(cfg)) as c:
+    with TestClient(criar_app(cfg), base_url="http://testserver/api") as c:
         yield c
 
 
@@ -119,3 +119,42 @@ def test_arquivo_grande_recusado(cliente, tmp_path):
 def test_404(cliente):
     assert cliente.get("/projetos/999").status_code == 404
     assert cliente.post("/projetos/999/pavimentos", json={"nome": "X"}).status_code == 404
+
+
+def test_interface_web_servida_na_raiz(tmp_path):
+    web = tmp_path / "dist"
+    web.mkdir()
+    (web / "index.html").write_text("<!doctype html><title>Quantum</title>")
+    cfg = Config(
+        database_url=f"sqlite:///{tmp_path / 'q.db'}",
+        pasta_arquivos=tmp_path / "arquivos",
+        tamanho_max_mb=5,
+        pasta_web=web,
+    )
+    with TestClient(criar_app(cfg)) as c:
+        assert "Quantum" in c.get("/").text
+        assert c.get("/api/saude").json()["status"] == "ok"
+
+
+def test_analise_presa_apos_reinicio_pode_ser_reprocessada(tmp_path, planta):
+    cfg = Config(
+        database_url=f"sqlite:///{tmp_path / 'q.db'}",
+        pasta_arquivos=tmp_path / "arquivos",
+        tamanho_max_mb=5,
+    )
+    with TestClient(criar_app(cfg), base_url="http://testserver/api") as c:
+        _, pav = _projeto_pavimento(c)
+        a = _enviar(c, pav["id"], planta).json()
+    # simula um reinício no meio do processamento
+    from quantum_api.db import Analise, criar_sessoes
+
+    sessoes = criar_sessoes(cfg.database_url)
+    with sessoes() as s:
+        s.get(Analise, a["id"]).status = "processando"
+        s.commit()
+    with TestClient(criar_app(cfg), base_url="http://testserver/api") as c:
+        det = c.get(f"/analises/{a['id']}").json()
+        assert det["status"] == "erro"
+        assert "Reprocessar" in det["erro"]
+        assert c.post(f"/analises/{a['id']}/reprocessar").status_code == 202
+        assert c.get(f"/analises/{a['id']}").json()["status"] == "concluida"

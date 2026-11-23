@@ -77,14 +77,30 @@ espaço do modelo vazio (XREF/paper space) e blocos na camada 0.
 - Paredes e vigas em linha dupla dão comprimento de faces, não de eixo.
 - Não desconta vãos de portas e janelas da alvenaria.
 
-## Sistema web (em construção)
+## Sistema web (GitHub Pages)
 
-A API da etapa 1 está em `src/quantum_api` ([docs/API.md](docs/API.md)):
+Endereço: **https://ciceromayk.github.io/Quantum/**
+
+A interface em `web/` roda **inteira no navegador**: o mesmo núcleo Python é executado com
+[Pyodide](https://pyodide.org) (Python em WebAssembly) dentro de um Web Worker. Não há servidor.
+
+- O DXF **não sai do computador** de quem usa. Projetos, análises e relatórios ficam no
+  IndexedDB daquele navegador.
+- Para backup ou para levar a outro computador, use **Exportar** (gera um `.json` sem o DXF) e
+  **Importar projeto**.
+- A primeira análise baixa o Python (cerca de 15 MB, uma vez só, do CDN jsDelivr). O DXF de
+  teste de 18 MB levou cerca de 20 s num computador comum. Arquivos muito grandes podem ficar lentos.
+- Cada push na `main` publica o site pelo workflow `.github/workflows/pages.yml`.
+
+Rodar localmente:
 
 ```bash
-pip install -e ".[api]"
-uvicorn quantum_api.main:app --reload   # http://127.0.0.1:8000/docs
+scripts/preparar_navegador.sh             # gera as wheels Python em web/public/py
+(cd web && npm install && npm run dev)    # http://localhost:5173
 ```
+
+A API FastAPI em `src/quantum_api` ([docs/API.md](docs/API.md)) continua no repositório para uso
+em servidor próprio, mas a interface publicada não depende dela.
 
 Arquitetura e próximos passos: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 Projetos estudados como referência e licenças: [docs/REFERENCIAS.md](docs/REFERENCIAS.md).
