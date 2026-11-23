@@ -73,6 +73,17 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
   = teto). Ajuste em `acabamentos.etiqueta` nas regras se o seu escritório usar outra convenção.
 - Soma piso e teto por código. Usa a área do contorno do ambiente quando existe uma polilinha
   fechada que bate com o rótulo; senão, usa a área declarada no rótulo e avisa.
+- **Sem zonas, detecta o ambiente pela geometria** (`acabamentos.deteccao` nas regras):
+  - as camadas de parede fecham o espaço (linhas duplas e folgas de 2 cm são unidas);
+  - cada bloco de esquadria fecha o vão pela parte que fica dentro da parede, e o arco da porta
+    vira folha fechada, para o espaço não vazar nem perder o giro da porta;
+  - linhas de projeção (`PROJ`) separam ambientes integrados; os pedaços são combinados até bater
+    com as áreas dos rótulos;
+  - dois ambientes no mesmo espaço sem linha entre eles recebem uma **divisa proposta** (reta que
+    reparte a área na proporção dos rótulos), marcada como alerta e gravada em
+    `QTD-xx-PROPOSTA` no DXF gerado;
+  - nada é aceito se a área não bater com o rótulo (5%); o resto vira pendência. Divisas sem
+    parede (projeção ou proposta) não entram no perímetro de parede.
 - Parede = perímetro do contorno × altura do revestimento. A altura **não é presumida**: informe
   `altura_parede_<código>` em metros, ou `teto` para usar o pé-direito, ou envie cortes com
   `--corte corte.dxf`. No corte, o revestimento é a hachura de padrão GRELHA/cerâmica/porcelanato
@@ -87,7 +98,7 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
 
 - Nomes de bloco por instância (`Vaso Sanitário 26[3]_1`) são agrupados pelo tipo (`Vaso Sanitário`).
 - Blocos inseridos todos em (0,0), com a geometria em coordenadas do mundo, não são tratados como duplicatas.
-- Zonas de ambiente costumam vir sem contorno: a área vem do rótulo e é marcada como "declarada", não medida.
+- Zonas de ambiente costumam vir sem contorno: o contorno é detectado pela geometria (ver Acabamentos); onde não dá, a área vem do rótulo e é marcada como "declarada", não medida.
 
 ## Limitações conhecidas (v0.1)
 

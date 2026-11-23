@@ -5,7 +5,7 @@
 // Padrão: CDN oficial. Em testes sem internet: VITE_PYODIDE_URL=./pyodide/ (relativo ao site).
 const PYODIDE_CFG: string = import.meta.env.VITE_PYODIDE_URL || "https://cdn.jsdelivr.net/pyodide/v0.27.2/full/";
 // Pacotes que já vêm compilados na distribuição do Pyodide.
-const PACOTES_PYODIDE = ["numpy", "pyyaml", "fonttools", "pyparsing", "typing-extensions"];
+const PACOTES_PYODIDE = ["numpy", "pyyaml", "fonttools", "pyparsing", "typing-extensions", "shapely"];
 
 type Pedido = { id: number; dxf: ArrayBuffer; parametros: Record<string, number | string>; unidade: string | null; basePy: string; cortes?: { nome: string; dados: ArrayBuffer }[] };
 

@@ -6,8 +6,9 @@ Fontes, todas do próprio desenho:
 - Etiqueta de cada ambiente: bloco com 3 atributos de 2 dígitos. A posição de cada número
   (regras: acabamentos.etiqueta) diz se é piso, parede ou teto.
 - Rótulo do ambiente: nome + área declarada ("SUÍTE CASAL 11,05 m2").
-- Contorno do ambiente (opcional): polilinha fechada que contém o rótulo e cuja área bate
-  com a declarada. Sem contorno, piso e teto usam a área declarada e a parede fica pendente.
+- Contorno do ambiente: polilinha fechada que contém o rótulo e cuja área bate com a
+  declarada; sem ela, o contorno é detectado pela geometria (ver `quantum.ambientes`). Sem
+  contorno, piso e teto usam a área declarada e a parede fica pendente.
 
 Alturas de revestimento de parede NÃO são presumidas. Vêm de parâmetros
 `altura_parede_<código>` (metros, ou "teto" para usar o pé-direito) ou, no futuro, dos cortes.
@@ -19,6 +20,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
+from .. import ambientes as detector
 from ..geometria import ponto_no_poligono
 from ..ingestao import ler_rotulo
 from ..modelos import Desenho, Entidade, ItemQuantitativo, Pendencia, Severidade
@@ -45,6 +47,7 @@ class Ambiente:
     etiqueta_handle: str | None = None
     contorno: list[tuple[float, float]] | None = None
     contorno_handle: str | None = None
+    contorno_origem: str | None = None  # "polilinha", "paredes", "divisao" ou "proposta"
     area_contorno_m2: float | None = None
     perimetro_m: float | None = None
 
@@ -71,6 +74,7 @@ class AgenteAcabamentos:
         self.dist_max_m = float(self.cfg.get("distancia_max_etiqueta_m", 1.0))
         self.tol_area = float(self.cfg.get("tolerancia_area_contorno", 0.05))
         self.cabecalhos = {k: re.compile(v, re.IGNORECASE) for k, v in (self.cfg.get("cabecalhos") or {}).items()}
+        self.grupos: list[dict] = []
 
     # ------------------------------------------------------------------ leitura
     def ler_quadro(self, d: Desenho, f: float) -> dict[str, dict[str, str]]:
@@ -169,6 +173,7 @@ class AgenteAcabamentos:
                                   handles=[e.handle for e in orfas]))
 
         self._contornos(d, ambientes, f)
+        self._pendencias_contorno(ambientes, pend)
 
         fora = sorted({(t, c) for a in ambientes for t, c in a.codigos.items() if c not in catalogo.get(t, {})})
         if fora:
@@ -185,17 +190,10 @@ class AgenteAcabamentos:
                 handles=[a.contorno_handle for a in dif if a.contorno_handle],
                 acao_sugerida="Confira se a polilinha é mesmo o contorno do ambiente.",
             ))
-        com_contorno = sum(a.contorno is not None for a in ambientes if a.codigos)
         for tipo in ("piso", "teto"):
             itens += self._areas(tipo, ambientes, catalogo)
         itens += self._paredes(ambientes, catalogo, pend)
 
-        if com_contorno == 0:
-            pend.append(Pendencia(
-                DISC, Severidade.ALERTA,
-                "Ambientes sem contorno: piso e teto usam a área declarada nos rótulos e a parede não pode ser medida.",
-                acao_sugerida="Exporte o DXF com o contorno (polígono) das zonas de ambiente.",
-            ))
         pend.append(Pendencia(DISC, Severidade.INFO, AVISO_ALTURAS))
         if "rodape" not in self.posicoes.values():
             pend.append(Pendencia(DISC, Severidade.INFO, "Rodapé não consta na etiqueta dos ambientes e não foi quantificado."))
@@ -204,11 +202,12 @@ class AgenteAcabamentos:
             "catalogo": catalogo,
             "codigos_parede": sorted({a.codigos["parede"] for a in ambientes if "parede" in a.codigos}),
             "aviso_alturas": AVISO_ALTURAS,
+            "grupos_integrados": self.grupos,
             "ambientes": [
                 {
                     "nome": a.nome, "area_rotulo": a.area_rotulo, "codigos": a.codigos,
                     "area_contorno_m2": a.area_contorno_m2, "perimetro_m": a.perimetro_m,
-                    "contorno": a.contorno, "handle": a.handle, "contorno_handle": a.contorno_handle,
+                    "contorno": a.contorno, "contorno_origem": a.contorno_origem, "handle": a.handle, "contorno_handle": a.contorno_handle,
                 }
                 for a in ambientes
             ],
@@ -223,8 +222,65 @@ class AgenteAcabamentos:
             if ok:
                 e = min(ok, key=lambda x: abs(x.area * f * f - a.area_rotulo))
                 a.contorno, a.contorno_handle = e.pontos, e.handle
+                a.contorno_origem = "polilinha"
                 a.area_contorno_m2 = e.area * f * f
                 a.perimetro_m = _perimetro(e.pontos) * f
+        # Sem polilinha: detecta o ambiente pelas paredes, esquadrias e linhas de divisão.
+        falta = [a for a in ambientes if a.contorno is None]
+        msp = getattr(d, "modelspace", None)
+        cfg = self.cfg.get("deteccao")
+        if not falta or msp is None or cfg is False:
+            return
+        cfg = {**(cfg or {}), "tolerancia_area": self.tol_area}
+        achados, grupos = detector.detectar(msp, [(a.nome, a.area_rotulo, a.ponto) for a in falta], f, cfg)
+        for i, c in achados.items():
+            a = falta[i]
+            a.contorno, a.contorno_origem = c.pontos, c.origem
+            a.area_contorno_m2 = c.area * f * f
+            a.perimetro_m = c.perimetro_parede * f  # só onde há parede: divisas abertas não contam
+        self.grupos = [
+            {"ambientes": [falta[i].nome for i in g.rotulos], "handles": [falta[i].handle for i in g.rotulos], "area_m2": g.contorno.area * f * f,
+             "perimetro_m": g.contorno.perimetro_parede * f, "contorno": g.contorno.pontos}
+            for g in grupos
+        ]
+
+    def _pendencias_contorno(self, ambientes: list[Ambiente], pend: list[Pendencia]) -> None:
+        def lista(xs):
+            return ", ".join(f"{a.nome} ({_m2(a.area_rotulo)})" for a in xs[:12]) + ("…" if len(xs) > 12 else "")
+
+        det = [a for a in ambientes if a.contorno_origem in ("paredes", "divisao")]
+        if det:
+            pend.append(Pendencia(
+                DISC, Severidade.INFO,
+                f"{len(det)} contorno(s) detectado(s) pela geometria (paredes, esquadrias e linhas de projeção), "
+                "aceitos só porque a área confere com o rótulo. Confira no DXF gerado.",
+            ))
+        prop = [a for a in ambientes if a.contorno_origem == "proposta"]
+        if prop:
+            pend.append(Pendencia(
+                DISC, Severidade.ALERTA,
+                f"Divisa proposta (sem parede nem linha no desenho) entre ambientes integrados: {lista(prop)}. "
+                "A reta reparte a área na proporção dos rótulos e não entra na parede.",
+                handles=[a.handle for a in prop],
+                acao_sugerida="Confira a divisa na camada QTD-*-PROPOSTA do DXF gerado e ajuste se precisar.",
+            ))
+        for g in self.grupos:
+            pend.append(Pendencia(
+                DISC, Severidade.ALERTA,
+                f"Ambientes integrados sem divisa no desenho: {', '.join(g['ambientes'])}. "
+                f"O espaço inteiro tem {_m2(g['area_m2'])}, conferindo com a soma dos rótulos, mas a divisão entre eles não foi feita.",
+                handles=g["handles"],
+                acao_sugerida="Desenhe a linha de divisa (camada de projeção) ou informe a divisão. Piso e teto usam a área declarada.",
+            ))
+        no_grupo = {h for g in self.grupos for h in g["handles"]}
+        sem = [a for a in ambientes if a.contorno is None and a.codigos and a.handle not in no_grupo]
+        if sem:
+            pend.append(Pendencia(
+                DISC, Severidade.ALERTA,
+                f"{len(sem)} ambiente(s) sem contorno reconhecido: {lista(sem)}. Piso e teto usam a área declarada; parede não medida.",
+                handles=[a.handle for a in sem],
+                acao_sugerida="Confira se as paredes fecham o ambiente e se a área do rótulo está certa.",
+            ))
 
     def _areas(self, tipo: str, ambientes: list[Ambiente], catalogo: dict) -> list[ItemQuantitativo]:
         grupos: dict[str, list[Ambiente]] = {}

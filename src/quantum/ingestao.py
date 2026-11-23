@@ -216,7 +216,7 @@ def carregar(caminho: str | Path, unidade: str | None = None) -> Desenho:
     entidades = [n for e in msp if (n := _normalizar(e, tolerancia)) is not None]
     camadas = sorted({layer.dxf.name for layer in doc.layers})
 
-    return Desenho(
+    d = Desenho(
         arquivo=str(caminho),
         versao_dxf=doc.dxfversion,
         insunits=insunits,
@@ -226,3 +226,5 @@ def carregar(caminho: str | Path, unidade: str | None = None) -> Desenho:
         camadas=camadas,
         origem_unidade=origem,
     )
+    d.modelspace = msp  # geometria bruta, para a detecção de ambientes (não serializada)
+    return d
