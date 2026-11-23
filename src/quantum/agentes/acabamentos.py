@@ -287,7 +287,7 @@ class AgenteAcabamentos:
             obs = f"{len(amb)} ambiente(s). Perímetro do contorno × altura, sem descontar vãos de portas e janelas."
             if len(medidos) < len(amb):
                 obs = f"{len(amb) - len(medidos)} de {len(amb)} ambiente(s) sem contorno: área não medida."
-            de_corte = sorted({f"{a.nome} {alturas[a.handle][0]:.2f} m".replace(".", ",") for a in amb if alturas.get(a.handle, (0, ""))[1] == "corte"})
+            de_corte = sorted({f"{a.nome} " + f"{alturas[a.handle][0]:.2f}".replace(".", ",") + " m" for a in amb if alturas.get(a.handle, (0, ""))[1] == "corte"})
             if de_corte:
                 obs += " Altura lida do corte (conferir): " + "; ".join(de_corte) + "."
             out.append(ItemQuantitativo(

@@ -16,13 +16,14 @@ from .orquestrador import analisar
 from .relatorio import para_json, para_markdown, para_xlsx
 
 
-def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None = None) -> str:
+def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None = None, cortes_json: str = "[]") -> str:
     parametros = {
         k: (v.strip().lower() if isinstance(v, str) else float(v))
         for k, v in json.loads(parametros_json or "{}").items()
         if v is not None and v != ""
     }
-    rel = analisar(caminho, unidade=unidade or None, parametros=parametros)
+    cortes = json.loads(cortes_json or "[]")
+    rel = analisar(caminho, unidade=unidade or None, parametros=parametros, cortes=cortes)
     buf = io.BytesIO()
     para_xlsx(rel, buf)
     dxf_b64 = None

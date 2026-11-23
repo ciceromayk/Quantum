@@ -26,6 +26,19 @@ export interface Pavimento {
   parametros: Parametros;
   unidade: string | null;
   analises: AnaliseResumo[];
+  cortes: CorteResumo[];
+}
+
+/** Corte/vista em DXF usado para ler alturas de revestimento do pavimento. */
+export interface CorteResumo {
+  id: number;
+  nome: string;
+  tamanho: number;
+  criado_em: string;
+}
+interface CorteReg extends CorteResumo {
+  pavimento_id: number;
+  dados: ArrayBuffer;
 }
 
 /** Valores em metros; "teto" = altura até o teto (usa o pé-direito). */
@@ -93,7 +106,7 @@ export interface AnaliseDetalhe extends AnaliseResumo {
 }
 
 type ProjetoReg = Omit<Projeto, "pavimentos">;
-type PavimentoReg = Omit<Pavimento, "analises">;
+type PavimentoReg = Omit<Pavimento, "analises" | "cortes">;
 type AnaliseReg = Omit<AnaliseDetalhe, "resultado">;
 interface RelatorioReg {
   resultado: Resultado;
@@ -136,6 +149,7 @@ function rodarNoMotor(
   dxf: ArrayBuffer,
   parametros: Parametros,
   unidade: string | null,
+  cortes: { nome: string; dados: ArrayBuffer }[],
   aoProgredir: (etapa: string) => void,
 ): Promise<RelatorioReg> {
   const id = ++seq;
@@ -154,7 +168,7 @@ function rodarNoMotor(
     w.addEventListener("message", ouvir);
     const basePy = new URL("py/", document.baseURI).href;
     // copia o buffer: o original continua guardado no IndexedDB
-    w.postMessage({ id, dxf: dxf.slice(0), parametros, unidade, basePy });
+    w.postMessage({ id, dxf: dxf.slice(0), parametros, unidade, basePy, cortes: cortes.map((c) => ({ nome: c.nome, dados: c.dados.slice(0) })) });
   });
 }
 
@@ -177,7 +191,8 @@ async function processar(analiseId: number) {
   }
   await atualizarAnalise(analiseId, { status: "processando", erro: null, etapa: "Preparando…" });
   try {
-    const saida = await rodarNoMotor(dxf, pav.parametros, pav.unidade, (etapa) => {
+    const cortes = (await banco.todos<CorteReg>("cortes")).filter((c) => c.pavimento_id === pav.id);
+    const saida = await rodarNoMotor(dxf, pav.parametros, pav.unidade, cortes, (etapa) => {
       atualizarAnalise(analiseId, { etapa });
     });
     await banco.gravar("relatorios", saida, analiseId);
@@ -211,8 +226,12 @@ export async function recuperarInterrompidas() {
 // --- leitura ---------------------------------------------------------------------------
 
 async function montarPavimento(p: PavimentoReg, analises: AnaliseReg[]): Promise<Pavimento> {
+  const cortes = (await banco.todos<CorteReg>("cortes"))
+    .filter((c) => c.pavimento_id === p.id)
+    .map(({ id, nome, tamanho, criado_em }) => ({ id, nome, tamanho, criado_em }));
   return {
     ...p,
+    cortes,
     analises: analises
       .filter((a) => a.pavimento_id === p.id)
       .sort((x, y) => x.revisao - y.revisao)
@@ -266,7 +285,7 @@ export const api = {
     if (!Number.isInteger(d.repeticoes) || d.repeticoes < 1 || d.repeticoes > 200) throw new Error("Repetições entre 1 e 200");
     const reg = { projeto_id: projetoId, nome: d.nome.trim(), repeticoes: d.repeticoes, parametros: {}, unidade: null };
     const id = await banco.gravar("pavimentos", reg);
-    return { ...reg, id, analises: [] } as Pavimento;
+    return { ...reg, id, analises: [], cortes: [] } as Pavimento;
   },
 
   pavimento: async (id: number) => {
@@ -310,6 +329,18 @@ export const api = {
   },
 
   temDxfAcabamentos: async (id: number) => !!(await banco.obter<RelatorioReg>("relatorios", id))?.dxf_acabamentos_base64,
+
+  /** Cortes valem para as próximas análises do pavimento (use Reprocessar nas anteriores). */
+  enviarCorte: async (pavimentoId: number, arquivo: File) => {
+    exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
+    const ext = arquivo.name.toLowerCase().split(".").pop();
+    if (ext === "dwg") throw new Error("DWG não é lido no navegador. Exporte o corte como DXF e envie novamente.");
+    if (ext !== "dxf") throw new Error("Envie o corte em .dxf");
+    if (arquivo.size > TAMANHO_MAX_MB * 1024 * 1024) throw new Error(`Arquivo maior que ${TAMANHO_MAX_MB} MB`);
+    const reg = { pavimento_id: pavimentoId, nome: arquivo.name, tamanho: arquivo.size, criado_em: agora(), dados: await arquivo.arrayBuffer() };
+    await banco.gravar("cortes", reg);
+  },
+  removerCorte: async (id: number) => banco.apagar("cortes", id),
 
   analise: async (id: number): Promise<AnaliseDetalhe> => {
     const a = exigir(await banco.obter<AnaliseReg>("analises", id), "Análise");

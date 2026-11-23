@@ -7,7 +7,7 @@ const PYODIDE_CFG: string = import.meta.env.VITE_PYODIDE_URL || "https://cdn.jsd
 // Pacotes que já vêm compilados na distribuição do Pyodide.
 const PACOTES_PYODIDE = ["numpy", "pyyaml", "fonttools", "pyparsing", "typing-extensions"];
 
-type Pedido = { id: number; dxf: ArrayBuffer; parametros: Record<string, number | string>; unidade: string | null; basePy: string };
+type Pedido = { id: number; dxf: ArrayBuffer; parametros: Record<string, number | string>; unidade: string | null; basePy: string; cortes?: { nome: string; dados: ArrayBuffer }[] };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pyodide: any = null;
@@ -50,16 +50,23 @@ async function iniciar(id: number, base: string) {
 }
 
 self.onmessage = async (ev: MessageEvent<Pedido>) => {
-  const { id, dxf, parametros, unidade, basePy } = ev.data;
+  const { id, dxf, parametros, unidade, basePy, cortes = [] } = ev.data;
   try {
     await iniciar(id, basePy);
     avisar(id, "Lendo o DXF e rodando os agentes…");
     const caminho = `/tmp/entrada_${id}.dxf`;
     pyodide.FS.writeFile(caminho, new Uint8Array(dxf));
+    const caminhosCortes = cortes.map((c, i) => {
+      const p = `/tmp/corte_${id}_${i}.dxf`;
+      pyodide.FS.writeFile(p, new Uint8Array(c.dados));
+      return p;
+    });
+    if (cortes.length) avisar(id, `Lendo o DXF, ${cortes.length} corte(s) e rodando os agentes…`);
     const modulo = pyodide.pyimport("quantum.navegador");
-    const texto: string = modulo.processar_dxf(caminho, JSON.stringify(parametros), unidade);
+    const texto: string = modulo.processar_dxf(caminho, JSON.stringify(parametros), unidade, JSON.stringify(caminhosCortes));
     modulo.destroy?.();
     pyodide.FS.unlink(caminho);
+    caminhosCortes.forEach((p) => pyodide.FS.unlink(p));
     postMessage({ id, tipo: "ok", saida: JSON.parse(texto) });
   } catch (e) {
     let msg = e instanceof Error ? e.message : String(e);
