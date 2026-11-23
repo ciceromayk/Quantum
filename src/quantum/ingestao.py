@@ -54,6 +54,9 @@ def limpar_texto(txt: str) -> str:
 
 
 def _primeiro_ponto_texto(insert) -> tuple[float, float] | None:
+    for a in insert.attribs:  # ATTRIBs anexados não aparecem em virtual_entities()
+        if a.dxf.get("text"):
+            return (a.dxf.insert.x, a.dxf.insert.y)
     try:
         for v in insert.virtual_entities():
             if v.dxftype() in ("TEXT", "MTEXT"):
