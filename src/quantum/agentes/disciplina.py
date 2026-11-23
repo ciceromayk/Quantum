@@ -72,14 +72,15 @@ class AgenteDisciplina:
                 )
             )
         res.handles_medidos[item.codigo] = blocos
-        soltas = [e for e in casadas if e.tipo in TIPOS_LINEARES]
+        soltas = [e for e in casadas if e.tipo not in TIPOS_TEXTO and e.tipo != "INSERT"]
         if soltas:
             res.pendencias.append(
                 Pendencia(
                     disciplina=self.nome,
                     severidade=Severidade.ALERTA,
                     mensagem=(
-                        f"{item.codigo}: {len(soltas)} linha(s)/arco(s) soltos nas camadas de contagem. "
+                        f"{item.codigo}: {len(soltas)} entidade(s) sem bloco nas camadas de contagem "
+                        f"({', '.join(sorted({e.tipo for e in soltas}))}). "
                         "Símbolos desenhados sem bloco não são contados."
                     ),
                     camada=", ".join(sorted({e.camada for e in soltas})),

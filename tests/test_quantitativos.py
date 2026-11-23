@@ -63,6 +63,12 @@ def test_contagem_por_bloco(planta):
     assert _item(rel, "ARQ-PORTAS", "bloco PORTA80").quantidade == 1
 
 
+def test_ponto_sem_bloco_em_camada_de_contagem_vira_pendencia(planta):
+    rel = analisar(planta)
+    assert _tem(rel, "ELE-TOMADAS: 1 entidade(s) sem bloco", Severidade.ALERTA)
+    assert "POINT" in next(p.mensagem for p in rel.pendencias if "sem bloco" in p.mensagem)
+
+
 def test_pilares_e_derivado_sem_parametro(planta):
     rel = analisar(planta)
     assert _item(rel, "EST-PILARES-UN").quantidade == 2

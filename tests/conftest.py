@@ -51,6 +51,7 @@ def criar_planta(caminho, insunits: int = 4) -> None:
         msp.add_blockref("TUG", p, dxfattribs={"layer": "ELE-TOMADA"})
     for p in [(2000, 2500), (5500, 1500)]:
         msp.add_blockref("LUM", p, dxfattribs={"layer": "ELE-ILUMINACAO"})
+    msp.add_point((3000, 100), dxfattribs={"layer": "ELE-TOMADA"})  # símbolo sem bloco
     msp.add_lwpolyline([(0, 100), (6000, 100)], dxfattribs={"layer": "ELE-ELETRODUTO"})
 
     msp.add_line((0, 4000), (3500, 4000), dxfattribs={"layer": "HID-AF"})
