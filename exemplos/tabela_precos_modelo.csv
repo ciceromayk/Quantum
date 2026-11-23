@@ -1,0 +1,9 @@
+item_quantum;detalhe;codigo_ref;descricao;unidade;preco_unitario;fonte;data_base
+ARQ-AMBIENTES;;;Revestimento de piso (preencha a composição);m²;;;
+ARQ-PAREDES-AREA;;;Alvenaria de vedação (preencha a composição);m²;;;
+EST-PILARES-CONCRETO;;;Concreto estrutural de pilares (preencha a composição);m³;;;
+EST-LAJES-CONCRETO;;;Concreto estrutural de lajes (preencha a composição);m³;;;
+ELE-TOMADAS;;;Ponto de tomada (preencha a composição);un;;;
+ELE-ELETRODUTOS;;;Eletroduto (preencha a composição);m;;;
+HID-AGUA-FRIA;;;Tubo de água fria (preencha a composição);m;;;
+HID-ESGOTO;;;Tubo de esgoto (preencha a composição);m;;;
