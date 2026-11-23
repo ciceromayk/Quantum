@@ -159,3 +159,20 @@ disciplinas:
         descricao: Louças e metais (peças sanitárias)
         camadas: ["LOUCA|LOUÇA|METAIS|PECA[-_ ]?SANIT|HID[-_ ]?LOU|LAYOUT[-_ ]?WC|SANITARI"]
         medida: contagem
+
+# Acabamentos lidos da planta de acabamentos.
+# A etiqueta de cada ambiente é um bloco com 3 atributos de 2 dígitos. A posição de cada
+# número diz o tipo, conforme os ícones do quadro de acabamentos do projeto. Confira o
+# quadro do seu escritório e ajuste aqui se for diferente.
+acabamentos:
+  etiqueta:
+    sup_esq: piso
+    sup_dir: parede
+    inf_esq: teto
+  distancia_max_etiqueta_m: 1.0     # etiqueta mais longe que isso do rótulo do ambiente não é associada
+  cabecalhos:                       # títulos das colunas do quadro de acabamentos
+    piso: "ESPECIFICA[CÇ][AÃ]O\\s*-\\s*PISO"
+    parede: "ESPECIFICA[CÇ][AÃ]O\\s*-\\s*PAREDE"
+    teto: "ESPECIFICA[CÇ][AÃ]O\\s*-\\s*TETO"
+    rodape: "ESPECIFICA[CÇ][AÃ]O\\s*-\\s*RODAP"
+  tolerancia_area_contorno: 0.05    # contorno aceito se a área bate com o rótulo dentro de 5%

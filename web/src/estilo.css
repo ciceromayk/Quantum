@@ -408,3 +408,40 @@ button:disabled,
 .aviso-rodape p {
   margin: 0 0 8px;
 }
+.marcar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.marcar input {
+  width: auto;
+}
+.form-acoes h2 {
+  margin-top: 8px;
+}
+.cortes {
+  border-top: 1px solid var(--borda);
+  border-bottom: 1px solid var(--borda);
+  margin: 12px 0;
+  padding: 10px 0;
+}
+.cortes-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.lista-cortes {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+.lista-cortes li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
