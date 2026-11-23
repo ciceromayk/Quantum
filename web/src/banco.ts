@@ -8,10 +8,26 @@ export type Loja = (typeof LOJAS)[number];
 
 let conexao: Promise<IDBDatabase> | null = null;
 
+const MSG_BLOQUEADO =
+  "O Quantum está aberto em outra aba com uma versão anterior e está impedindo a atualização dos dados salvos. " +
+  "Feche as outras abas do Quantum e recarregue esta página.";
+
 function abrir(): Promise<IDBDatabase> {
   if (!conexao) {
-    conexao = new Promise((ok, falha) => {
-      const r = indexedDB.open(NOME, VERSAO);
+    conexao = new Promise<IDBDatabase>((ok, falha) => {
+      if (typeof indexedDB === "undefined") {
+        falha(new Error("Este navegador não permite salvar dados locais (IndexedDB). Saia da janela anônima ou use outro navegador."));
+        return;
+      }
+      let r: IDBOpenDBRequest;
+      try {
+        r = indexedDB.open(NOME, VERSAO);
+      } catch (e) {
+        falha(new Error(`Não foi possível abrir os dados locais: ${(e as Error).message}`));
+        return;
+      }
+      // Sem resposta em 15 s: outra aba segurando a versão antiga ou armazenamento travado.
+      const tempo = window.setTimeout(() => falha(new Error(MSG_BLOQUEADO)), 15000);
       r.onupgradeneeded = () => {
         const db = r.result;
         for (const loja of LOJAS) {
@@ -22,11 +38,36 @@ function abrir(): Promise<IDBDatabase> {
           }
         }
       };
-      r.onsuccess = () => ok(r.result);
-      r.onerror = () => falha(r.error);
+      r.onblocked = () => {
+        window.clearTimeout(tempo);
+        falha(new Error(MSG_BLOQUEADO));
+      };
+      r.onsuccess = () => {
+        window.clearTimeout(tempo);
+        const db = r.result;
+        // Uma aba mais nova quer atualizar o banco: esta fecha a conexão para não travar a outra.
+        db.onversionchange = () => {
+          db.close();
+          conexao = null;
+          alertarVersaoNova();
+        };
+        ok(db);
+      };
+      r.onerror = () => {
+        window.clearTimeout(tempo);
+        falha(new Error(`Não foi possível abrir os dados locais: ${r.error?.message ?? "erro desconhecido"}`));
+      };
+    }).catch((e) => {
+      conexao = null; // permite tentar de novo depois
+      throw e;
     });
   }
   return conexao;
+}
+
+/** Avisa a interface (App) que outra aba atualizou o Quantum. */
+function alertarVersaoNova() {
+  window.dispatchEvent(new CustomEvent("quantum:versao-nova"));
 }
 
 function req<T>(r: IDBRequest<T>): Promise<T> {
@@ -41,6 +82,8 @@ async function loja(nome: Loja, modo: IDBTransactionMode = "readonly") {
 }
 
 export const banco = {
+  /** Abre (e atualiza, se preciso) o banco local; rejeita com mensagem clara se não der. */
+  abrir: () => abrir().then(() => undefined),
   async todos<T>(nome: Loja): Promise<T[]> {
     return req((await loja(nome)).getAll()) as Promise<T[]>;
   },
