@@ -32,6 +32,9 @@ Servidor: `uvicorn quantum_api.main:app --reload` → interface em `/`, rotas so
 - O arquivo é salvo com nome gerado por ids; o nome enviado fica só como metadado.
 - Processamento em segundo plano no próprio processo (BackgroundTasks). Um DXF de 17 MB
   levou cerca de 6 s. Fila dedicada quando o volume pedir.
+- **Rode com um único worker** (`uvicorn` sem `--workers`). Na inicialização, análises que ficaram
+  `na_fila` ou `processando` viram `erro`; com vários workers isso marcaria tarefas ainda vivas de
+  outro processo. A recuperação por dono da tarefa entra junto com a fila dedicada.
 - Tabelas criadas automaticamente; migrações (Alembic) entram antes da primeira mudança de esquema em produção.
 - Sem login por decisão do usuário (23/11/2026). Publicar com o endereço restrito à equipe até haver login.
 
