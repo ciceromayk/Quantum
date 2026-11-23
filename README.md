@@ -79,11 +79,12 @@ espaço do modelo vazio (XREF/paper space) e blocos na camada 0.
 
 ## Sistema web (em construção)
 
-A API da etapa 1 está em `src/quantum_api` ([docs/API.md](docs/API.md)):
+A API está em `src/quantum_api` e a interface em `web/` ([docs/API.md](docs/API.md)):
 
 ```bash
 pip install -e ".[api]"
-uvicorn quantum_api.main:app --reload   # http://127.0.0.1:8000/docs
+(cd web && npm install && npm run build)  # interface
+uvicorn quantum_api.main:app --reload     # http://127.0.0.1:8000
 ```
 
 Arquitetura e próximos passos: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).

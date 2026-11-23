@@ -1,15 +1,16 @@
 """Rotas da API do Quantum.
 
 Rodar em desenvolvimento:  uvicorn quantum_api.main:app --reload
-Documentação interativa:   http://127.0.0.1:8000/docs
+Documentação interativa:   http://127.0.0.1:8000/docs  (rotas sob /api)
 """
 
 from __future__ import annotations
 
 from collections import Counter
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -17,7 +18,7 @@ from quantum import AVISO_ESTIMATIVA, __version__
 
 from .config import Config
 from .db import Analise, Pavimento, Projeto, criar_sessoes
-from .processamento import caminhos_relatorio, processar
+from .processamento import caminhos_relatorio, processar, recuperar_interrompidas
 from .schemas import (
     PARAMETROS_CONHECIDOS,
     AnaliseDetalhe,
@@ -36,12 +37,15 @@ def criar_app(config: Config | None = None) -> FastAPI:
     config = config or Config.do_ambiente()
     config.pasta_arquivos.mkdir(parents=True, exist_ok=True)
     sessoes: sessionmaker = criar_sessoes(config.database_url)
+    recuperar_interrompidas(sessoes)
 
     app = FastAPI(
         title="Quantum",
         version=__version__,
         description="Quantitativos e orçamento a partir de DXF. " + AVISO_ESTIMATIVA,
     )
+
+    rotas = APIRouter(prefix="/api")
 
     def sessao():
         with sessoes() as s:
@@ -55,17 +59,17 @@ def criar_app(config: Config | None = None) -> FastAPI:
 
     # --- geral ------------------------------------------------------------------------
 
-    @app.get("/saude")
+    @rotas.get("/saude")
     def saude():
         return {"status": "ok", "versao": __version__, "aviso": AVISO_ESTIMATIVA}
 
-    @app.get("/parametros-conhecidos")
+    @rotas.get("/parametros-conhecidos")
     def parametros_conhecidos():
         return PARAMETROS_CONHECIDOS
 
     # --- projetos ---------------------------------------------------------------------
 
-    @app.post("/projetos", response_model=ProjetoSaida, status_code=201)
+    @rotas.post("/projetos", response_model=ProjetoSaida, status_code=201)
     def criar_projeto(dados: ProjetoEntrada, s: Session = Depends(sessao)):
         p = Projeto(**dados.model_dump())
         s.add(p)
@@ -73,17 +77,17 @@ def criar_app(config: Config | None = None) -> FastAPI:
         s.refresh(p)
         return p
 
-    @app.get("/projetos", response_model=list[ProjetoSaida])
+    @rotas.get("/projetos", response_model=list[ProjetoSaida])
     def listar_projetos(s: Session = Depends(sessao)):
         return s.scalars(select(Projeto).order_by(Projeto.id.desc())).all()
 
-    @app.get("/projetos/{projeto_id}", response_model=ProjetoSaida)
+    @rotas.get("/projetos/{projeto_id}", response_model=ProjetoSaida)
     def ver_projeto(projeto_id: int, s: Session = Depends(sessao)):
         return obter(s, Projeto, projeto_id, "Projeto")
 
     # --- pavimentos -------------------------------------------------------------------
 
-    @app.post("/projetos/{projeto_id}/pavimentos", response_model=PavimentoSaida, status_code=201)
+    @rotas.post("/projetos/{projeto_id}/pavimentos", response_model=PavimentoSaida, status_code=201)
     def criar_pavimento(projeto_id: int, dados: PavimentoEntrada, s: Session = Depends(sessao)):
         obter(s, Projeto, projeto_id, "Projeto")
         pav = Pavimento(projeto_id=projeto_id, parametros={}, **dados.model_dump())
@@ -92,11 +96,11 @@ def criar_app(config: Config | None = None) -> FastAPI:
         s.refresh(pav)
         return pav
 
-    @app.get("/pavimentos/{pavimento_id}", response_model=PavimentoSaida)
+    @rotas.get("/pavimentos/{pavimento_id}", response_model=PavimentoSaida)
     def ver_pavimento(pavimento_id: int, s: Session = Depends(sessao)):
         return obter(s, Pavimento, pavimento_id, "Pavimento")
 
-    @app.put("/pavimentos/{pavimento_id}/parametros", response_model=PavimentoSaida)
+    @rotas.put("/pavimentos/{pavimento_id}/parametros", response_model=PavimentoSaida)
     def definir_parametros(pavimento_id: int, dados: Parametros, s: Session = Depends(sessao)):
         """Substitui os parâmetros do pavimento. Reprocesse a análise para aplicá-los."""
         pav = obter(s, Pavimento, pavimento_id, "Pavimento")
@@ -108,7 +112,7 @@ def criar_app(config: Config | None = None) -> FastAPI:
 
     # --- arquivos e análises ----------------------------------------------------------
 
-    @app.post("/pavimentos/{pavimento_id}/arquivos", response_model=AnaliseResumo, status_code=202)
+    @rotas.post("/pavimentos/{pavimento_id}/arquivos", response_model=AnaliseResumo, status_code=202)
     async def enviar_arquivo(
         pavimento_id: int,
         arquivo: UploadFile,
@@ -147,7 +151,7 @@ def criar_app(config: Config | None = None) -> FastAPI:
         tarefas.add_task(processar, sessoes, analise.id)
         return analise
 
-    @app.post("/analises/{analise_id}/reprocessar", response_model=AnaliseResumo, status_code=202)
+    @rotas.post("/analises/{analise_id}/reprocessar", response_model=AnaliseResumo, status_code=202)
     def reprocessar(analise_id: int, tarefas: BackgroundTasks, s: Session = Depends(sessao)):
         """Roda de novo com os parâmetros e a unidade atuais do pavimento."""
         analise = obter(s, Analise, analise_id, "Análise")
@@ -159,7 +163,7 @@ def criar_app(config: Config | None = None) -> FastAPI:
         tarefas.add_task(processar, sessoes, analise.id)
         return analise
 
-    @app.get("/analises/{analise_id}", response_model=AnaliseDetalhe)
+    @rotas.get("/analises/{analise_id}", response_model=AnaliseDetalhe)
     def ver_analise(analise_id: int, incluir_resultado: bool = True, s: Session = Depends(sessao)):
         analise = obter(s, Analise, analise_id, "Análise")
         sev = Counter(p["severidade"] for p in (analise.resultado or {}).get("pendencias", []))
@@ -169,7 +173,7 @@ def criar_app(config: Config | None = None) -> FastAPI:
             dados.resultado = None
         return dados
 
-    @app.get("/analises/{analise_id}/relatorio.{formato}")
+    @rotas.get("/analises/{analise_id}/relatorio.{formato}")
     def baixar_relatorio(analise_id: int, formato: str, s: Session = Depends(sessao)):
         analise = obter(s, Analise, analise_id, "Análise")
         if formato not in ("md", "xlsx"):
@@ -181,6 +185,12 @@ def criar_app(config: Config | None = None) -> FastAPI:
             raise HTTPException(404, "Relatório não encontrado; reprocesse a análise")
         base = analise.arquivo_nome.rsplit(".", 1)[0]
         return FileResponse(caminho, filename=f"{base}_R{analise.revisao}.{formato}")
+
+    app.include_router(rotas)
+
+    # Interface web (build do Vite em web/dist), servida na raiz quando existir.
+    if config.pasta_web and (config.pasta_web / "index.html").exists():
+        app.mount("/", StaticFiles(directory=config.pasta_web, html=True), name="web")
 
     return app
 
