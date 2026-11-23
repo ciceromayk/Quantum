@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, Pavimento, Projeto } from "../api";
+import { api, Pavimento, PLANTA_GRANDE_MB, Projeto } from "../api";
 import { dataHora, STATUS } from "../formato";
 
 export default function ProjetoTela({ id }: { id: number }) {
@@ -81,9 +81,16 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
 
+  const [aviso, setAviso] = useState("");
+
   async function enviar(arquivo: File | undefined) {
     if (!arquivo) return;
     setErro("");
+    setAviso(
+      arquivo.size > PLANTA_GRANDE_MB * 1048576
+        ? `Planta com ${Math.round(arquivo.size / 1048576)} MB: pode faltar memória no navegador. Se der erro, exporte só o pavimento, sem outras pranchas e xrefs.`
+        : "",
+    );
     setEnviando(true);
     try {
       await api.enviarArquivo(pav.id, arquivo);
@@ -125,9 +132,10 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
         </label>
       </div>
       {erro && <p className="erro">{erro}</p>}
+      {aviso && <p className="discreto pequeno">{aviso}</p>}
       <Cortes pav={pav} aoMudar={aoMudar} aoErrar={setErro} />
       {analises.length === 0 ? (
-        <p className="discreto">Nenhum arquivo enviado. Exporte o pavimento como DXF no CAD e envie aqui.</p>
+        <p className="discreto">Nenhum arquivo enviado. Exporte o pavimento como DXF no CAD e envie aqui (até 500 MB).</p>
       ) : (
         <table className="tabela">
           <thead>
@@ -222,7 +230,7 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
           {pav.cortes.map((c) => (
             <li key={c.id}>
               {c.nome} <span className="discreto pequeno">({(c.tamanho / 1048576).toFixed(1).replace(".", ",")} MB)</span>
-              {c.tamanho > 50 * 1048576 && <span className="erro pequeno"> arquivo grande: o processamento pode ficar lento</span>}
+              {c.tamanho > 100 * 1048576 && <span className="discreto pequeno"> · arquivo grande: a leitura leva alguns minutos</span>}
               <button
                 className="secundario-btn"
                 onClick={() =>

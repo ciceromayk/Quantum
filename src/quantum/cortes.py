@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ezdxf import bbox
+from ezdxf.addons import iterdxf
 
-from .ingestao import abrir_documento, limpar_texto
+from .ingestao import ErroIngestao, limpar_texto
 
 PADRAO_REVESTIMENTO = r"GRELHA|CER[AÂ]MIC|AZULEJ|PORCELAN|PASTILH|REVEST"
 PADRAO_LAJE = r"CONCRETO"
@@ -44,16 +45,36 @@ def _caixa(e):
     return (b.extmin.x, b.extmin.y, b.extmax.x, b.extmax.y) if b.has_data else None
 
 
+def _insunits(caminho: Path) -> int:
+    """Lê $INSUNITS no começo do arquivo (cabeçalho), sem carregar o desenho."""
+    with open(caminho, "rb") as f:
+        bloco = f.read(4 * 1024 * 1024).decode("latin-1")
+    m = re.search(r"\$INSUNITS\s*\r?\n\s*70\s*\r?\n\s*(\d+)", bloco)
+    return int(m.group(1)) if m else 0
+
+
+def _entidades(caminho: Path):
+    """Percorre só hachuras e textos do modelspace, em fluxo: arquivos de centenas de MB cabem na memória."""
+    if caminho.suffix.lower() != ".dxf":
+        raise ErroIngestao(f"Corte precisa ser DXF (recebido {caminho.suffix or 'sem extensão'}).")
+    try:
+        with open(caminho, "rb") as f:
+            yield from iterdxf.single_pass_modelspace(f, types=["HATCH", "TEXT", "MTEXT"])
+    except Exception as exc:
+        raise ErroIngestao(f"DXF de corte inválido ou corrompido: {exc}") from exc
+
+
 def ler_alturas_corte(
     caminho: str | Path,
     padrao_revestimento: str = PADRAO_REVESTIMENTO,
     padrao_laje: str = PADRAO_LAJE,
     fator_m: float | None = None,
 ) -> list[AlturaCorte]:
-    doc = abrir_documento(caminho)
-    msp = doc.modelspace()
+    caminho = Path(caminho)
+    if not caminho.exists():
+        raise ErroIngestao(f"Arquivo não encontrado: {caminho}")
     if fator_m is None:
-        fator_m = {4: 0.001, 5: 0.01, 6: 1.0, 14: 0.1}.get(int(doc.header.get("$INSUNITS", 0)))
+        fator_m = {4: 0.001, 5: 0.01, 6: 1.0, 14: 0.1}.get(_insunits(caminho))
     if not fator_m:
         raise ValueError("Unidade do corte desconhecida ($INSUNITS). Informe a unidade.")
     rx_rev = re.compile(padrao_revestimento, re.IGNORECASE)
@@ -61,7 +82,7 @@ def ler_alturas_corte(
     tol = 0.02 / fator_m
 
     rev, lajes, textos = [], [], []
-    for e in msp:
+    for e in _entidades(caminho):
         t = e.dxftype()
         if t == "HATCH":
             nome = e.dxf.pattern_name or ""

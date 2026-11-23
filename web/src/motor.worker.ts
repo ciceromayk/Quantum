@@ -7,7 +7,7 @@ const PYODIDE_CFG: string = import.meta.env.VITE_PYODIDE_URL || "https://cdn.jsd
 // Pacotes que já vêm compilados na distribuição do Pyodide.
 const PACOTES_PYODIDE = ["numpy", "pyyaml", "fonttools", "pyparsing", "typing-extensions", "shapely"];
 
-type Pedido = { id: number; dxf: ArrayBuffer; parametros: Record<string, number | string>; unidade: string | null; basePy: string; cortes?: { nome: string; dados: ArrayBuffer }[] };
+type Pedido = { id: number; dxf: Blob; parametros: Record<string, number | string>; unidade: string | null; basePy: string; cortes?: { nome: string; dados: Blob }[] };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pyodide: any = null;
@@ -54,22 +54,35 @@ self.onmessage = async (ev: MessageEvent<Pedido>) => {
   try {
     await iniciar(id, basePy);
     avisar(id, "Lendo o DXF e rodando os agentes…");
-    const caminho = `/tmp/entrada_${id}.dxf`;
-    pyodide.FS.writeFile(caminho, new Uint8Array(dxf));
-    const caminhosCortes = cortes.map((c, i) => {
-      const p = `/tmp/corte_${id}_${i}.dxf`;
-      pyodide.FS.writeFile(p, new Uint8Array(c.dados));
-      return p;
-    });
+    // WORKERFS: o Python lê os arquivos direto dos Blobs, aos pedaços, sem copiá-los inteiros para a memória.
+    const dir = `/entrada_${id}`;
+    const blobs = [{ name: "planta.dxf", data: dxf }, ...cortes.map((c, i) => ({ name: `corte_${i}.dxf`, data: c.dados }))];
+    pyodide.FS.mkdirTree(dir);
+    pyodide.FS.mount(pyodide.FS.filesystems.WORKERFS, { blobs }, dir);
+    const caminho = `${dir}/planta.dxf`;
+    const caminhosCortes = cortes.map((_, i) => `${dir}/corte_${i}.dxf`);
     if (cortes.length) avisar(id, `Lendo o DXF, ${cortes.length} corte(s) e rodando os agentes…`);
-    const modulo = pyodide.pyimport("quantum.navegador");
-    const texto: string = modulo.processar_dxf(caminho, JSON.stringify(parametros), unidade, JSON.stringify(caminhosCortes));
-    modulo.destroy?.();
-    pyodide.FS.unlink(caminho);
-    caminhosCortes.forEach((p) => pyodide.FS.unlink(p));
+    let texto: string;
+    try {
+      const modulo = pyodide.pyimport("quantum.navegador");
+      texto = modulo.processar_dxf(caminho, JSON.stringify(parametros), unidade, JSON.stringify(caminhosCortes));
+      modulo.destroy?.();
+    } finally {
+      pyodide.FS.unmount(dir);
+      pyodide.FS.rmdir(dir);
+    }
     postMessage({ id, tipo: "ok", saida: JSON.parse(texto) });
   } catch (e) {
     let msg = e instanceof Error ? e.message : String(e);
+    if (/MemoryError|out of memory|Cannot enlarge memory|memory access out of bounds|Array buffer allocation failed/i.test(msg)) {
+      pyodide = null;
+      carregando = null;
+      postMessage({
+        id, tipo: "erro",
+        erro: "Faltou memória no navegador para abrir este DXF. Feche outras abas e tente de novo; se repetir, exporte só o pavimento (sem outras pranchas, xrefs e hachuras desnecessárias) ou divida o arquivo.",
+      });
+      return;
+    }
     if (/fatal error/i.test(msg)) {
       // O Pyodide não se recupera de um erro fatal: descarta e recarrega no próximo pedido.
       pyodide = null;

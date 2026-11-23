@@ -38,7 +38,7 @@ export interface CorteResumo {
 }
 interface CorteReg extends CorteResumo {
   pavimento_id: number;
-  dados: ArrayBuffer;
+  dados: Blob | ArrayBuffer; // Blob desde a v3 (fica no disco); ArrayBuffer em registros antigos
 }
 
 /** Valores em metros; "teto" = altura até o teto (usa o pé-direito). */
@@ -126,7 +126,11 @@ const PARAMETROS_CONHECIDOS: Record<string, string> = {
   espessura_laje: "Espessura da laje (m)",
 };
 
-const TAMANHO_MAX_MB = 200;
+const TAMANHO_MAX_MB = 500;
+/** Acima disso a planta pode faltar memória no navegador (o corte é lido em fluxo e aguenta mais). */
+export const PLANTA_GRANDE_MB = 150;
+
+const comoBlob = (d: Blob | ArrayBuffer) => (d instanceof Blob ? d : new Blob([d]));
 const agora = () => new Date().toISOString();
 
 function exigir<T>(v: T | undefined, nome: string): T {
@@ -146,10 +150,10 @@ function motor(): Worker {
 }
 
 function rodarNoMotor(
-  dxf: ArrayBuffer,
+  dxf: Blob,
   parametros: Parametros,
   unidade: string | null,
-  cortes: { nome: string; dados: ArrayBuffer }[],
+  cortes: { nome: string; dados: Blob }[],
   aoProgredir: (etapa: string) => void,
 ): Promise<RelatorioReg> {
   const id = ++seq;
@@ -167,8 +171,8 @@ function rodarNoMotor(
     };
     w.addEventListener("message", ouvir);
     const basePy = new URL("py/", document.baseURI).href;
-    // copia o buffer: o original continua guardado no IndexedDB
-    w.postMessage({ id, dxf: dxf.slice(0), parametros, unidade, basePy, cortes: cortes.map((c) => ({ nome: c.nome, dados: c.dados.slice(0) })) });
+    // Blobs vão por referência: o worker lê direto do disco, sem copiar o arquivo inteiro na memória.
+    w.postMessage({ id, dxf, parametros, unidade, basePy, cortes });
   });
 }
 
@@ -184,14 +188,17 @@ function enfileirar(analiseId: number) {
 async function processar(analiseId: number) {
   const a = exigir(await banco.obter<AnaliseReg>("analises", analiseId), "Análise");
   const pav = exigir(await banco.obter<PavimentoReg>("pavimentos", a.pavimento_id), "Pavimento");
-  const dxf = await banco.obter<ArrayBuffer>("arquivos", analiseId);
+  const guardado = await banco.obter<Blob | ArrayBuffer>("arquivos", analiseId);
+  const dxf = guardado && comoBlob(guardado);
   if (!dxf) {
     await atualizarAnalise(analiseId, { status: "erro", erro: "Arquivo DXF não encontrado neste navegador. Envie de novo.", etapa: null });
     return;
   }
   await atualizarAnalise(analiseId, { status: "processando", erro: null, etapa: "Preparando…" });
   try {
-    const cortes = (await banco.todos<CorteReg>("cortes")).filter((c) => c.pavimento_id === pav.id);
+    const cortes = (await banco.todos<CorteReg>("cortes"))
+      .filter((c) => c.pavimento_id === pav.id)
+      .map((c) => ({ nome: c.nome, dados: comoBlob(c.dados) }));
     const saida = await rodarNoMotor(dxf, pav.parametros, pav.unidade, cortes, (etapa) => {
       atualizarAnalise(analiseId, { etapa });
     });
@@ -323,7 +330,7 @@ export const api = {
       pendencias_por_severidade: {},
     };
     const id = await banco.gravar("analises", reg);
-    await banco.gravar("arquivos", await arquivo.arrayBuffer(), id);
+    await banco.gravar("arquivos", arquivo, id); // o File (Blob) fica no disco do navegador
     enfileirar(id);
     return { ...reg, id } as AnaliseResumo;
   },
@@ -337,7 +344,7 @@ export const api = {
     if (ext === "dwg") throw new Error("DWG não é lido no navegador. Exporte o corte como DXF e envie novamente.");
     if (ext !== "dxf") throw new Error("Envie o corte em .dxf");
     if (arquivo.size > TAMANHO_MAX_MB * 1024 * 1024) throw new Error(`Arquivo maior que ${TAMANHO_MAX_MB} MB`);
-    const reg = { pavimento_id: pavimentoId, nome: arquivo.name, tamanho: arquivo.size, criado_em: agora(), dados: await arquivo.arrayBuffer() };
+    const reg = { pavimento_id: pavimentoId, nome: arquivo.name, tamanho: arquivo.size, criado_em: agora(), dados: arquivo as Blob };
     await banco.gravar("cortes", reg);
   },
   removerCorte: async (id: number) => banco.apagar("cortes", id),
