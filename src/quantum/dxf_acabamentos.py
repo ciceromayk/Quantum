@@ -2,7 +2,8 @@
 
 Para cada ambiente com contorno e etiqueta, cria uma LWPOLYLINE fechada em cada camada
 QTD-PISO-<código>, QTD-PAREDE-<código> e QTD-TETO-<código>. A descrição do quadro de
-acabamentos vai na descrição da camada.
+acabamentos vai na descrição da camada. Contornos com divisa proposta (ambientes integrados
+sem linha de divisão) vão em QTD-<tipo>-<código>-PROPOSTA, para conferência.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Pa
         for tipo, cod in sorted(a["codigos"].items()):
             if tipo not in CORES:
                 continue
-            nome = f"QTD-{tipo.upper()}-{cod}"
+            nome = f"QTD-{tipo.upper()}-{cod}" + ("-PROPOSTA" if a.get("contorno_origem") == "proposta" else "")
             if nome not in doc.layers:
                 camada = doc.layers.add(nome, color=CORES[tipo])
                 camada.description = catalogo.get(tipo, {}).get(cod, "")[:200]

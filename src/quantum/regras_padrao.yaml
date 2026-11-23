@@ -176,3 +176,12 @@ acabamentos:
     teto: "ESPECIFICA[CÇ][AÃ]O\\s*-\\s*TETO"
     rodape: "ESPECIFICA[CÇ][AÃ]O\\s*-\\s*RODAP"
   tolerancia_area_contorno: 0.05    # contorno aceito se a área bate com o rótulo dentro de 5%
+  # Sem polilinha de contorno, o ambiente é detectado pela geometria da planta:
+  # camadas de parede fecham o espaço, blocos de esquadria fecham os vãos e as linhas de
+  # divisão (projeções) separam ambientes integrados. Ajuste às camadas do seu escritório.
+  deteccao:
+    camadas_parede: [ALVENARIA, DRY WALL, REBOCO, PILAR, CERCADURA]
+    camadas_esquadria: [ESQ]
+    camadas_divisao: [PROJ]
+    tolerancia_m: 0.02              # une linhas duplas e folgas pequenas entre paredes
+    raio_m: 3.0                     # rótulo fora do ambiente (com seta) casa até essa distância
