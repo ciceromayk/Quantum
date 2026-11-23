@@ -77,5 +77,14 @@ espaço do modelo vazio (XREF/paper space) e blocos na camada 0.
 - Paredes e vigas em linha dupla dão comprimento de faces, não de eixo.
 - Não desconta vãos de portas e janelas da alvenaria.
 
+## Sistema web (em construção)
+
+A API da etapa 1 está em `src/quantum_api` ([docs/API.md](docs/API.md)):
+
+```bash
+pip install -e ".[api]"
+uvicorn quantum_api.main:app --reload   # http://127.0.0.1:8000/docs
+```
+
 Arquitetura e próximos passos: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 Projetos estudados como referência e licenças: [docs/REFERENCIAS.md](docs/REFERENCIAS.md).

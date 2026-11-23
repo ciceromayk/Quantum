@@ -9,3 +9,4 @@ saida/
 # Arquivos de projeto de clientes não devem ir para o Git
 *.dwg
 *.bak
+dados/
