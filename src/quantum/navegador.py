@@ -11,6 +11,7 @@ import base64
 import io
 import json
 import os
+import tempfile
 
 from .orquestrador import analisar
 from .relatorio import para_json, para_markdown, para_xlsx
@@ -30,7 +31,8 @@ def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None
     if rel.acabamentos:
         from .dxf_acabamentos import gerar_dxf_acabamentos
 
-        destino = caminho + ".acabamentos.dxf"
+        # a entrada pode estar num sistema de arquivos só de leitura (WORKERFS): grava no temporário
+        destino = os.path.join(tempfile.gettempdir(), os.path.basename(caminho) + ".acabamentos.dxf")
         if gerar_dxf_acabamentos(caminho, rel.acabamentos, destino):
             with open(destino, "rb") as fh:
                 dxf_b64 = base64.b64encode(fh.read()).decode("ascii")

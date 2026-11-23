@@ -120,7 +120,12 @@ A interface em `web/` roda **inteira no navegador**: o mesmo núcleo Python é e
 - Para backup ou para levar a outro computador, use **Exportar** (gera um `.json` sem o DXF) e
   **Importar projeto**.
 - A primeira análise baixa o Python (cerca de 15 MB, uma vez só, do CDN jsDelivr). O DXF de
-  teste de 18 MB levou cerca de 20 s num computador comum. Arquivos muito grandes podem ficar lentos.
+  teste de 18 MB levou cerca de 20 s num computador comum.
+- Arquivos de até 500 MB. Ficam guardados no disco do navegador e o Python lê direto deles, sem
+  copiar o arquivo inteiro para a memória. Cortes são lidos em fluxo (só hachuras e textos): o
+  corte de 287 MB do projeto usa cerca de 60 MB de memória. A planta precisa ser carregada
+  inteira (blocos, portas, paredes) e usa por volta de 5 vezes o tamanho do arquivo: acima de
+  ~150 MB pode faltar memória no navegador; nesse caso, exporte só o pavimento.
 - Cada push na `main` publica o site pelo workflow `.github/workflows/pages.yml`.
 
 Rodar localmente:
