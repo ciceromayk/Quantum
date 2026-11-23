@@ -63,6 +63,23 @@ O auditor verifica: unidade do desenho, camadas sem disciplina, contornos aberto
 área, geometria duplicada (dupla contagem), área escrita no desenho × área do contorno,
 espaço do modelo vazio (XREF/paper space) e blocos na camada 0.
 
+## Acabamentos (planta de acabamentos)
+
+Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
+
+- Lê o **quadro de acabamentos** do próprio desenho (colunas "ESPECIFICAÇÃO - PISO/PAREDE/TETO/RODAPÉ").
+- Lê a **etiqueta de cada ambiente**: bloco com 3 números. A posição de cada número diz se é piso,
+  parede ou teto (padrão: em cima à esquerda = piso, em cima à direita = parede, embaixo à esquerda
+  = teto). Ajuste em `acabamentos.etiqueta` nas regras se o seu escritório usar outra convenção.
+- Soma piso e teto por código. Usa a área do contorno do ambiente quando existe uma polilinha
+  fechada que bate com o rótulo; senão, usa a área declarada no rótulo e avisa.
+- Parede = perímetro do contorno × altura do revestimento. A altura **não é presumida**: informe
+  `altura_parede_<código>` em metros, ou `teto` para usar o pé-direito. A leitura das alturas a
+  partir dos cortes está em desenvolvimento. Alturas tiradas de cortes valem só para os
+  ambientes cortados e precisam de conferência.
+- Gera um **DXF novo** (`<arquivo>_acabamentos.dxf`) com polilinhas fechadas nas camadas
+  `QTD-PISO-xx`, `QTD-PAREDE-xx` e `QTD-TETO-xx`. O original não é alterado.
+
 ## Arquivos exportados de BIM (ArchiCAD, Revit)
 
 - Nomes de bloco por instância (`Vaso Sanitário 26[3]_1`) são agrupados pelo tipo (`Vaso Sanitário`).

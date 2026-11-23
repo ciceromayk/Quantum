@@ -11,13 +11,14 @@ from .orquestrador import analisar
 from .relatorio import para_json, para_markdown, para_xlsx
 
 
-def _params(valores: list[str]) -> dict[str, float]:
+def _params(valores: list[str]) -> dict[str, float | str]:
     out = {}
     for v in valores or []:
         if "=" not in v:
             raise SystemExit(f"Parâmetro inválido '{v}'. Use nome=valor, ex.: pe_direito=2.80")
         k, x = v.split("=", 1)
-        out[k.strip()] = float(x.replace(",", "."))
+        x = x.strip()
+        out[k.strip()] = "teto" if x.lower() == "teto" else float(x.replace(",", "."))
     return out
 
 
@@ -28,12 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("arquivo")
     a.add_argument("--regras", help="YAML de regras de camadas (padrão: regras_padrao.yaml do pacote)")
     a.add_argument("--unidade", choices=["mm", "cm", "dm", "m"], help="Sobrepõe o $INSUNITS do desenho")
-    a.add_argument("--param", action="append", metavar="NOME=VALOR", help="Parâmetro em metros, ex.: pe_direito=2.80")
+    a.add_argument("--param", action="append", metavar="NOME=VALOR", help="Parâmetro em metros, ex.: pe_direito=2.80 ou altura_parede_01=teto")
     a.add_argument("--precos", help="Tabela de preços CSV (;) para gerar o orçamento")
     a.add_argument("--bdi", type=float, help="BDI em %% (só se informado)")
-    a.add_argument("--disciplina", action="append", help="Limita a disciplinas: layout, estrutural, eletrica, hidraulica")
+    a.add_argument("--disciplina", action="append", help="Limita a disciplinas: layout, estrutural, eletrica, hidraulica, acabamentos")
     a.add_argument("--saida", default="saida", help="Pasta de saída (padrão: ./saida)")
-    a.add_argument("--formatos", default="md,xlsx,json", help="md,xlsx,json")
+    a.add_argument("--formatos", default="md,xlsx,json,dxf", help="md,xlsx,json,dxf (dxf = polilinhas por acabamento)")
     args = ap.parse_args(argv)
 
     try:
@@ -61,6 +62,12 @@ def main(argv: list[str] | None = None) -> int:
         base.with_suffix(".json").write_text(para_json(rel), encoding="utf-8")
     if "xlsx" in formatos:
         para_xlsx(rel, base.with_suffix(".xlsx"))
+    if "dxf" in formatos and rel.acabamentos:
+        from .dxf_acabamentos import gerar_dxf_acabamentos
+
+        n = gerar_dxf_acabamentos(args.arquivo, rel.acabamentos, base.parent / f"{base.name}_acabamentos.dxf")
+        if n:
+            print(f"DXF de acabamentos: {n} polilinha(s) em {base.name}_acabamentos.dxf", file=sys.stderr)
     print(md)
     return 0
 

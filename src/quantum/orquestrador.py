@@ -1,6 +1,6 @@
 """Orquestrador: coordena o grupo de agentes.
 
-Fluxo:  Ingestão → Agentes de disciplina (layout, estrutural, elétrica, hidráulica)
+Fluxo:  Ingestão → Agentes de disciplina (layout, estrutural, elétrica, hidráulica, acabamentos)
         → Auditor → Orçamentista (opcional) → Relatório
 """
 
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .agentes import AgenteAuditor, AgenteDisciplina, AgenteOrcamentista
+from .agentes import AgenteAcabamentos, AgenteAuditor, AgenteDisciplina, AgenteOrcamentista
 from .ingestao import carregar
 from .modelos import Relatorio
 from .regras import carregar_regras
@@ -19,7 +19,7 @@ def analisar(
     *,
     regras: str | Path | None = None,
     unidade: str | None = None,
-    parametros: dict[str, float] | None = None,
+    parametros: dict[str, float | str] | None = None,
     tabela_precos: str | Path | None = None,
     bdi: float | None = None,
     disciplinas: list[str] | None = None,
@@ -41,6 +41,12 @@ def analisar(
         usadas |= res.camadas_usadas
         medidas.update(res.handles_medidos)
         rotuladas |= {i.codigo for i in regra_disc.itens if i.rotular_por_texto}
+
+    if not disciplinas or "acabamentos" in disciplinas:
+        itens_ac, pend_ac, resumo_ac = AgenteAcabamentos(r.acabamentos, parametros).executar(desenho)
+        rel.itens += itens_ac
+        rel.pendencias += pend_ac
+        rel.acabamentos = resumo_ac
 
     pend, nao_class = AgenteAuditor(r).auditar(desenho, usadas, medidas, rotuladas)
     rel.pendencias = pend + rel.pendencias

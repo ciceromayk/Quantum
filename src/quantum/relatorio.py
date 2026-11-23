@@ -35,7 +35,7 @@ def para_markdown(rel: Relatorio) -> str:
         f"- Entidades no espaço do modelo: {len(d.entidades)}",
     ]
     if rel.parametros:
-        L.append("- Parâmetros informados: " + ", ".join(f"{k} = {v} m" for k, v in rel.parametros.items()))
+        L.append("- Parâmetros informados: " + ", ".join(f"{k} = {v}" + ("" if isinstance(v, str) else " m") for k, v in rel.parametros.items()))
 
     pend = sorted(rel.pendencias, key=lambda p: ORDEM_SEV[p.severidade])
     n_bloq = sum(p.severidade == Severidade.BLOQUEANTE for p in pend)
@@ -107,7 +107,7 @@ def para_xlsx(rel: Relatorio, caminho: str | Path) -> None:
     ws.append(["Arquivo", Path(rel.desenho.arquivo).name])
     ws.append(["Unidade", rel.desenho.unidade or "DESCONHECIDA", rel.desenho.origem_unidade])
     for k, v in rel.parametros.items():
-        ws.append([f"Parâmetro {k} (m)", v])
+        ws.append([f"Parâmetro {k}" + ("" if isinstance(v, str) else " (m)"), v])
 
     q = wb.create_sheet("Quantitativos")
     q.append(["Disciplina", "Código", "Descrição", "Detalhe", "Quantidade", "Unidade", "Camadas", "Observação"])
@@ -129,6 +129,15 @@ def para_xlsx(rel: Relatorio, caminho: str | Path) -> None:
         o.append(["Custo direto", None, None, None, None, None, f"=SUM(G2:G{fim})"])
         if rel.bdi is not None:
             o.append(["BDI (%)", None, None, None, None, rel.bdi, f"=G{fim + 2}*(1+F{fim + 3}/100)"])
+
+    if rel.acabamentos.get("ambientes"):
+        a = wb.create_sheet("Acabamentos")
+        a.append(["Ambiente", "Área rótulo (m²)", "Piso", "Parede", "Teto", "Área contorno (m²)", "Perímetro (m)"])
+        for x in rel.acabamentos["ambientes"]:
+            c = x["codigos"]
+            a.append([x["nome"], x["area_rotulo"], c.get("piso"), c.get("parede"), c.get("teto"), x["area_contorno_m2"], x["perimetro_m"]])
+        a.append([])
+        a.append([rel.acabamentos.get("aviso_alturas", "")])
 
     for folha in wb.worksheets[1:]:
         for c in folha[1]:

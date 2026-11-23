@@ -408,3 +408,15 @@ button:disabled,
 .aviso-rodape p {
   margin: 0 0 8px;
 }
+.marcar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.marcar input {
+  width: auto;
+}
+.form-acoes h2 {
+  margin-top: 8px;
+}

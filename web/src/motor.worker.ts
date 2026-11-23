@@ -7,7 +7,7 @@ const PYODIDE_CFG: string = import.meta.env.VITE_PYODIDE_URL || "https://cdn.jsd
 // Pacotes que já vêm compilados na distribuição do Pyodide.
 const PACOTES_PYODIDE = ["numpy", "pyyaml", "fonttools", "pyparsing", "typing-extensions"];
 
-type Pedido = { id: number; dxf: ArrayBuffer; parametros: Record<string, number>; unidade: string | null; basePy: string };
+type Pedido = { id: number; dxf: ArrayBuffer; parametros: Record<string, number | string>; unidade: string | null; basePy: string };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pyodide: any = null;

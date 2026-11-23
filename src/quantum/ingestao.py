@@ -53,6 +53,16 @@ def limpar_texto(txt: str) -> str:
     return re.sub(r"\s+", " ", txt).strip()
 
 
+def _primeiro_ponto_texto(insert) -> tuple[float, float] | None:
+    try:
+        for v in insert.virtual_entities():
+            if v.dxftype() in ("TEXT", "MTEXT"):
+                return (v.dxf.insert.x, v.dxf.insert.y)
+    except Exception:
+        pass
+    return None
+
+
 def _textos_do_bloco(insert) -> list[str]:
     out = [a.dxf.text for a in insert.attribs if a.dxf.get("text")]
     try:
@@ -155,6 +165,10 @@ def _normalizar(e, tolerancia: float) -> Entidade | None:
             insercao=(ins.x, ins.y),
             texto=rot[0] if rot else None,
             area_rotulo=rot[1] if rot else None,
+            ponto_texto=_primeiro_ponto_texto(e) if rot else None,
+            atributos=[
+                (limpar_texto(a.dxf.text), a.dxf.insert.x, a.dxf.insert.y) for a in e.attribs if a.dxf.get("text")
+            ],
         )
     if tipo in TIPOS_TEXTO:
         ins = e.dxf.insert
@@ -166,6 +180,7 @@ def _normalizar(e, tolerancia: float) -> Entidade | None:
             camada=camada,
             texto=texto,
             insercao=(ins.x, ins.y),
+            ponto_texto=(ins.x, ins.y),
             area_rotulo=rot[1] if rot else None,
         )
     # HATCH, DIMENSION etc. entram só no inventário de camadas
