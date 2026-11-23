@@ -17,6 +17,7 @@ ignorar_camadas:
   - "DEFPOINTS"
   - "COTA|DIM"
   - "TEXTO|TEXT|NOTA"
+  - "WIPEOUT|MASCARA"
   - "CARIMBO|SELO|FOLHA|MOLDURA|LEGENDA"
   - "HACH|HATCH"
   - "EIXO|GRID"
@@ -31,6 +32,13 @@ disciplinas:
         camadas: ["AMBIENTE|AREA[-_ ]?UTIL|PISO$|ARQ[-_ ]?AREA"]
         medida: area
         rotular_por_texto: true   # usa o TEXT/MTEXT dentro do polígono como nome do ambiente
+      - codigo: ARQ-AMBIENTES-ROTULO
+        descricao: Área de ambiente declarada no rótulo (nome + área escritos no projeto)
+        camadas: ["TEXTO|TEXT|R[OÓ]TULO|AMBIENTE|NOME"]
+        medida: area_rotulo
+        observacao: >-
+          Valor escrito pelo projetista, não medido na geometria. Confira com o quadro de
+          áreas do projeto.
       - codigo: ARQ-PAREDES
         descricao: Comprimento de paredes (linhas na camada de alvenaria)
         camadas: ["PAREDE|ALVENARIA|ARQ[-_ ]?PAR"]
@@ -50,6 +58,22 @@ disciplinas:
       - codigo: ARQ-JANELAS
         descricao: Janelas
         camadas: ["JANELA|ESQ[-_ ]?J"]
+        medida: contagem
+
+      - codigo: ARQ-ESQUADRIAS
+        descricao: Esquadrias por tipo de bloco
+        camadas: ["^ESQ$|ESQUADRIA"]
+        medida: contagem
+      - codigo: ARQ-DRYWALL
+        descricao: Linhas de drywall em planta
+        camadas: ["DRY[-_ ]?WALL|ACARTONADO"]
+        medida: comprimento
+        observacao: >-
+          Soma de todas as linhas da camada (faces, montantes e detalhes). NÃO é o
+          comprimento de parede de drywall; use só como ordem de grandeza.
+      - codigo: ARQ-MOBILIARIO
+        descricao: Mobiliário e equipamentos (referência, em geral fora do orçamento de obra)
+        camadas: ["LAYOUT[-_ ]?MOB|MOBILI"]
         medida: contagem
 
   estrutural:
@@ -133,5 +157,5 @@ disciplinas:
         medida: comprimento
       - codigo: HID-PECAS
         descricao: Louças e metais (peças sanitárias)
-        camadas: ["LOUCA|LOUÇA|METAIS|PECA[-_ ]?SANIT|HID[-_ ]?LOU"]
+        camadas: ["LOUCA|LOUÇA|METAIS|PECA[-_ ]?SANIT|HID[-_ ]?LOU|LAYOUT[-_ ]?WC|SANITARI"]
         medida: contagem

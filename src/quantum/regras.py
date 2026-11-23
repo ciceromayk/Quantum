@@ -11,7 +11,7 @@ import yaml
 
 from .modelos import Medida
 
-UNIDADE_POR_MEDIDA = {Medida.CONTAGEM: "un", Medida.COMPRIMENTO: "m", Medida.AREA: "m²"}
+UNIDADE_POR_MEDIDA = {Medida.CONTAGEM: "un", Medida.COMPRIMENTO: "m", Medida.AREA: "m²", Medida.AREA_ROTULO: "m²"}
 
 
 @dataclass
@@ -84,8 +84,8 @@ def carregar_regras(caminho: str | Path | None = None) -> Regras:
             if i["codigo"] in codigos:
                 raise ValueError(f"Código de item repetido nas regras: {i['codigo']}")
             codigos.add(i["codigo"])
-            if i.get("blocos") and medida != Medida.CONTAGEM:
-                raise ValueError(f"{i['codigo']}: filtro 'blocos' só vale para medida contagem")
+            if i.get("blocos") and medida not in (Medida.CONTAGEM, Medida.AREA_ROTULO):
+                raise ValueError(f"{i['codigo']}: filtro 'blocos' só vale para contagem e area_rotulo")
             itens.append(
                 RegraItem(
                     codigo=i["codigo"],

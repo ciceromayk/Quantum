@@ -54,7 +54,7 @@ Opções úteis:
 
 | Disciplina | Itens (regras padrão) |
 |---|---|
-| Layout | Área por ambiente (nome pelo texto dentro do contorno), comprimento de paredes, área de alvenaria (× pé-direito), portas e janelas (blocos) |
+| Layout | Área por ambiente (nome pelo texto dentro do contorno), área declarada nos rótulos de ambiente (blocos ou MTEXT com nome + "xx,xx m²"), esquadrias por tipo, comprimento de paredes, área de alvenaria (× pé-direito), portas e janelas (blocos) |
 | Estrutural | Pilares (quantidade e área de seção), volume de pilares (× altura), comprimento de vigas, área e volume de lajes (× espessura) |
 | Elétrica | Tomadas, interruptores, iluminação e quadros (blocos), eletrodutos em planta |
 | Hidráulica | Água fria, água quente, esgoto e pluvial em planta, louças e metais (blocos) |
@@ -62,6 +62,12 @@ Opções úteis:
 O auditor verifica: unidade do desenho, camadas sem disciplina, contornos abertos em camadas de
 área, geometria duplicada (dupla contagem), área escrita no desenho × área do contorno,
 espaço do modelo vazio (XREF/paper space) e blocos na camada 0.
+
+## Arquivos exportados de BIM (ArchiCAD, Revit)
+
+- Nomes de bloco por instância (`Vaso Sanitário 26[3]_1`) são agrupados pelo tipo (`Vaso Sanitário`).
+- Blocos inseridos todos em (0,0), com a geometria em coordenadas do mundo, não são tratados como duplicatas.
+- Zonas de ambiente costumam vir sem contorno: a área vem do rótulo e é marcada como "declarada", não medida.
 
 ## Limitações conhecidas (v0.1)
 

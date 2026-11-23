@@ -22,7 +22,7 @@ def criar_planta(caminho, insunits: int = 4) -> None:
     - 3 tomadas (bloco TUG) + 1 duplicada no mesmo ponto, 2 luminárias
     - Eletroduto: polilinha de 6 m
     - Água fria: 3,5 m; esgoto: arco de raio 1 m e 90° (≈1,5708 m)
-    - Camada "MOBILIARIO" sem regra (deve virar pendência)
+    - Camada "PAISAGISMO" sem regra (deve virar pendência)
     """
     doc = ezdxf.new("R2018")
     doc.header["$INSUNITS"] = insunits
@@ -57,7 +57,7 @@ def criar_planta(caminho, insunits: int = 4) -> None:
     msp.add_line((0, 4000), (3500, 4000), dxfattribs={"layer": "HID-AF"})
     msp.add_arc((0, 0), radius=1000, start_angle=0, end_angle=90, dxfattribs={"layer": "HID-ESGOTO"})
 
-    msp.add_line((100, 100), (900, 900), dxfattribs={"layer": "MOBILIARIO"})
+    msp.add_line((100, 100), (900, 900), dxfattribs={"layer": "PAISAGISMO"})
     doc.saveas(caminho)
 
 

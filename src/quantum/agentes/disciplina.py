@@ -44,6 +44,8 @@ class AgenteDisciplina:
             res.camadas_usadas.update(e.camada for e in casadas)
             if item.medida == Medida.CONTAGEM:
                 self._contagem(item, casadas, res)
+            elif item.medida == Medida.AREA_ROTULO:
+                self._area_rotulo(item, casadas, res)
             elif item.medida == Medida.COMPRIMENTO:
                 self._comprimento(item, casadas, desenho, res)
             else:
@@ -72,7 +74,7 @@ class AgenteDisciplina:
                 )
             )
         res.handles_medidos[item.codigo] = blocos
-        soltas = [e for e in casadas if e.tipo not in TIPOS_TEXTO and e.tipo != "INSERT"]
+        soltas = [e for e in casadas if e.tipo in TIPOS_LINEARES or e.tipo in ("POINT", "SOLID")]
         if soltas:
             res.pendencias.append(
                 Pendencia(
@@ -88,6 +90,50 @@ class AgenteDisciplina:
                     acao_sugerida="Converter os símbolos em blocos (BLOCK/INSERT) ou contar manualmente.",
                 )
             )
+
+    def _area_rotulo(self, item: RegraItem, casadas: list[Entidade], res: ResultadoDisciplina) -> None:
+        """Área escrita nos rótulos de ambiente (bloco ou MTEXT com nome + 'xx,xx m²').
+
+        Não depende da unidade do desenho: é o valor que o projetista escreveu.
+        """
+        rotulos = [e for e in casadas if e.area_rotulo is not None and e.texto]
+        if not rotulos:
+            return
+        res.handles_medidos[item.codigo] = rotulos
+        por_nome: dict[str, list[Entidade]] = defaultdict(list)
+        for e in rotulos:
+            por_nome[e.texto.upper()].append(e)
+        obs_base = "Área declarada no rótulo do projeto (não medida na geometria)."
+        for nome, ents in sorted(por_nome.items()):
+            res.itens.append(
+                ItemQuantitativo(
+                    disciplina=self.nome,
+                    codigo=item.codigo,
+                    descricao=item.descricao,
+                    unidade="m²",
+                    quantidade=sum(e.area_rotulo for e in ents),
+                    camadas=sorted({e.camada for e in ents}),
+                    detalhe=nome,
+                    handles=[e.handle for e in ents],
+                    observacao=f"{len(ents)} rótulo(s): "
+                    + ", ".join(f"{e.area_rotulo:.2f}".replace(".", ",") for e in ents[:12])
+                    + (" ..." if len(ents) > 12 else ""),
+                )
+            )
+        res.itens.append(
+            ItemQuantitativo(
+                disciplina=self.nome,
+                codigo=item.codigo,
+                descricao=f"{item.descricao} (total)",
+                unidade="m²",
+                quantidade=sum(e.area_rotulo for e in rotulos),
+                camadas=sorted({e.camada for e in rotulos}),
+                detalhe="total",
+                handles=[e.handle for e in rotulos],
+                observacao=_juntar(obs_base, item.observacao),
+            )
+        )
+        self._derivados(item, sum(e.area_rotulo for e in rotulos), res)
 
     def _comprimento(
         self, item: RegraItem, casadas: list[Entidade], desenho: Desenho, res: ResultadoDisciplina

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import ezdxf
@@ -29,6 +30,59 @@ FATOR_POR_NOME = {nome: fator for nome, fator in UNIDADES.values()}
 
 TIPOS_LINEARES = {"LINE", "LWPOLYLINE", "POLYLINE", "ARC", "CIRCLE", "ELLIPSE", "SPLINE"}
 TIPOS_TEXTO = {"TEXT", "MTEXT"}
+
+# Sufixos de instância que alguns softwares BIM (ex.: ArchiCAD) adicionam a cada bloco
+# exportado: "Vaso Sanitário 26[3]_1", "BHO._32_5_1", "Rótulo_12_1".
+_RX_SUFIXO_BLOCO = [
+    re.compile(r"\s*\d*\[\d+\](?:_\d+)*$"),
+    re.compile(r"(?:_\d+){1,2}_1$"),
+]
+RX_AREA = re.compile(r"(\d+(?:[.,]\d+)?)\s*m(?:²|2)(?![\w])", re.IGNORECASE)
+
+
+def nome_tipo_bloco(nome: str) -> str:
+    base = nome
+    for rx in _RX_SUFIXO_BLOCO:
+        base = rx.sub("", base)
+    return base.strip() or nome
+
+
+def limpar_texto(txt: str) -> str:
+    """Remove caracteres de controle de MTEXT exportado (ex.: '^') e espaços repetidos."""
+    txt = txt.replace("^", " ").replace("\\P", " ")
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def _textos_do_bloco(insert) -> list[str]:
+    out = [a.dxf.text for a in insert.attribs if a.dxf.get("text")]
+    try:
+        for v in insert.virtual_entities():
+            t = v.dxftype()
+            if t == "MTEXT":
+                out.append(v.plain_text())
+            elif t in ("TEXT", "ATTDEF"):
+                out.append(v.dxf.get("text", ""))
+    except Exception:  # bloco corrompido/proxy: segue sem texto
+        pass
+    return [limpar_texto(t) for t in out if t and t.strip()]
+
+
+def ler_rotulo(textos: list[str]) -> tuple[str, float] | None:
+    """Um rótulo de ambiente tem um texto de nome e um texto de área ('11,05 m2')."""
+    area = None
+    nomes = []
+    for t in textos:
+        m = RX_AREA.search(t)
+        if m and area is None:
+            area = float(m.group(1).replace(",", "."))
+            resto = limpar_texto(RX_AREA.sub("", t))
+            if resto:
+                nomes.append(resto)
+        elif t:
+            nomes.append(t)
+    if area is None or not nomes:
+        return None
+    return " ".join(nomes), area
 
 
 class ErroIngestao(RuntimeError):
@@ -91,13 +145,29 @@ def _normalizar(e, tolerancia: float) -> Entidade | None:
         )
     if tipo == "INSERT":
         ins = e.dxf.insert
+        rot = ler_rotulo(_textos_do_bloco(e))
         return Entidade(
-            handle=handle, tipo=tipo, camada=camada, bloco=e.dxf.name, insercao=(ins.x, ins.y)
+            handle=handle,
+            tipo=tipo,
+            camada=camada,
+            bloco=nome_tipo_bloco(e.dxf.name),
+            bloco_original=e.dxf.name,
+            insercao=(ins.x, ins.y),
+            texto=rot[0] if rot else None,
+            area_rotulo=rot[1] if rot else None,
         )
     if tipo in TIPOS_TEXTO:
         ins = e.dxf.insert
-        texto = e.plain_text() if tipo == "MTEXT" else e.dxf.text
-        return Entidade(handle=handle, tipo=tipo, camada=camada, texto=texto, insercao=(ins.x, ins.y))
+        texto = limpar_texto(e.plain_text() if tipo == "MTEXT" else e.dxf.text)
+        rot = ler_rotulo([texto]) if tipo == "MTEXT" else None
+        return Entidade(
+            handle=handle,
+            tipo=tipo,
+            camada=camada,
+            texto=texto,
+            insercao=(ins.x, ins.y),
+            area_rotulo=rot[1] if rot else None,
+        )
     # HATCH, DIMENSION etc. entram só no inventário de camadas
     return Entidade(handle=handle, tipo=tipo, camada=camada)
 

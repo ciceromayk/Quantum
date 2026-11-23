@@ -23,6 +23,7 @@ class Medida(str, Enum):
     CONTAGEM = "contagem"  # unidades (blocos/INSERTs)
     COMPRIMENTO = "comprimento"  # m
     AREA = "area"  # m²
+    AREA_ROTULO = "area_rotulo"  # m² escrito no rótulo do ambiente (não medido)
 
 
 class Severidade(str, Enum):
@@ -42,7 +43,9 @@ class Entidade:
     fechada: bool = False
     comprimento: float = 0.0  # unidades do desenho
     area: float = 0.0  # unidades do desenho ao quadrado (só se fechada)
-    bloco: str | None = None  # nome do bloco (INSERT)
+    bloco: str | None = None  # nome do bloco (INSERT), sem sufixo de instância
+    bloco_original: str | None = None  # nome exato no DXF
+    area_rotulo: float | None = None  # m² lido de rótulo (nome + área) do ambiente
     texto: str | None = None  # conteúdo (TEXT/MTEXT)
     insercao: tuple[float, float] | None = None
 

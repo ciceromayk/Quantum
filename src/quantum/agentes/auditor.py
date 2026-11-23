@@ -112,7 +112,7 @@ class AgenteAuditor:
             dup: list[str] = []
             for e in ents:
                 if e.tipo == "INSERT":
-                    chave = (e.bloco, round(e.insercao[0], 3), round(e.insercao[1], 3))
+                    chave = (e.bloco_original or e.bloco, round(e.insercao[0], 3), round(e.insercao[1], 3))
                 elif e.pontos:
                     chave = assinatura(e.pontos)
                 else:

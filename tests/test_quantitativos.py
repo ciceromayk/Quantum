@@ -66,7 +66,7 @@ def test_contagem_por_bloco(planta):
 def test_ponto_sem_bloco_em_camada_de_contagem_vira_pendencia(planta):
     rel = analisar(planta)
     assert _tem(rel, "ELE-TOMADAS: 1 entidade(s) sem bloco", Severidade.ALERTA)
-    assert "POINT" in next(p.mensagem for p in rel.pendencias if "sem bloco" in p.mensagem)
+    assert "POINT" in next(p.mensagem for p in rel.pendencias if p.mensagem.startswith("ELE-TOMADAS: 1 entidade"))
 
 
 def test_pilares_e_derivado_sem_parametro(planta):
@@ -86,7 +86,7 @@ def test_derivado_com_parametro(planta):
 
 def test_camada_nao_classificada(planta):
     rel = analisar(planta)
-    assert "MOBILIARIO" in rel.camadas_nao_classificadas
+    assert "PAISAGISMO" in rel.camadas_nao_classificadas
     assert "ARQ-TEXTO" not in rel.camadas_nao_classificadas
 
 
@@ -140,3 +140,35 @@ def test_dwg_sem_oda_da_mensagem_clara(tmp_path):
     f.write_bytes(b"AC1032")
     with pytest.raises(ErroIngestao):
         abrir_documento(f)
+
+
+def test_nome_de_bloco_sem_sufixo_de_instancia():
+    from quantum.ingestao import nome_tipo_bloco
+
+    assert nome_tipo_bloco("Vaso Sanitário 26[3]_1") == "Vaso Sanitário"
+    assert nome_tipo_bloco("TORNEIRA DE BICA ALTA PARA LAVATÓRIO[20]_1") == "TORNEIRA DE BICA ALTA PARA LAVATÓRIO"
+    assert nome_tipo_bloco("BHO._32_5_1") == "BHO."
+    assert nome_tipo_bloco("Rótulo_12_1") == "Rótulo"
+    assert nome_tipo_bloco("PORTA_80_210") == "PORTA_80_210"  # medida no nome não é sufixo
+
+
+def test_rotulo_de_ambiente_em_bloco(tmp_path):
+    import ezdxf
+
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    b = doc.blocks.new("Rótulo_1_1")
+    b.add_mtext("SUÍTE CASAL^ ^ ^", dxfattribs={"layer": "TEXTO"})
+    b.add_mtext("11,05^  m2^ ^", dxfattribs={"layer": "TEXTO"})
+    msp = doc.modelspace()
+    msp.add_blockref("Rótulo_1_1", (0, 0), dxfattribs={"layer": "TEXTO"})
+    # BIM exporta blocos diferentes no mesmo ponto (0,0): não são duplicatas
+    for n in (1, 2):
+        doc.blocks.new(f"Porta 26[{n}]_1").add_line((n, 0), (n + 1, 0))
+        msp.add_blockref(f"Porta 26[{n}]_1", (0, 0), dxfattribs={"layer": "ESQ"})
+    f = tmp_path / "bim.dxf"
+    doc.saveas(f)
+    rel = analisar(f)
+    assert _item(rel, "ARQ-AMBIENTES-ROTULO", "SUÍTE CASAL").quantidade == pytest.approx(11.05)
+    assert _item(rel, "ARQ-ESQUADRIAS", "bloco Porta").quantidade == 2
+    assert not _tem(rel, "sobreposto")
