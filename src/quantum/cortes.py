@@ -22,7 +22,14 @@ from pathlib import Path
 from ezdxf import bbox
 from ezdxf.addons import iterdxf
 
-from .ingestao import ErroIngestao, limpar_texto
+from .ingestao import ErroIngestao, abrir_documento, limpar_texto
+
+SENTINELA_BINARIO = b"AutoCAD Binary DXF"
+
+
+def _binario(caminho: Path) -> bool:
+    with open(caminho, "rb") as f:
+        return f.read(len(SENTINELA_BINARIO)) == SENTINELA_BINARIO
 
 PADRAO_REVESTIMENTO = r"GRELHA|CER[AÂ]MIC|AZULEJ|PORCELAN|PASTILH|REVEST"
 PADRAO_LAJE = r"CONCRETO"
@@ -47,6 +54,8 @@ def _caixa(e):
 
 def _insunits(caminho: Path) -> int:
     """Lê $INSUNITS no começo do arquivo (cabeçalho), sem carregar o desenho."""
+    if _binario(caminho):
+        return int(abrir_documento(caminho).header.get("$INSUNITS", 0))
     with open(caminho, "rb") as f:
         bloco = f.read(4 * 1024 * 1024).decode("latin-1")
     m = re.search(r"\$INSUNITS\s*\r?\n\s*70\s*\r?\n\s*(\d+)", bloco)
@@ -57,6 +66,11 @@ def _entidades(caminho: Path):
     """Percorre só hachuras e textos do modelspace, em fluxo: arquivos de centenas de MB cabem na memória."""
     if caminho.suffix.lower() != ".dxf":
         raise ErroIngestao(f"Corte precisa ser DXF (recebido {caminho.suffix or 'sem extensão'}).")
+    if _binario(caminho):
+        # DXF binário: a leitura em fluxo só aceita ASCII; carrega o desenho inteiro
+        msp = abrir_documento(caminho).modelspace()
+        yield from (e for e in msp if e.dxftype() in ("HATCH", "TEXT", "MTEXT"))
+        return
     try:
         with open(caminho, "rb") as f:
             yield from iterdxf.single_pass_modelspace(f, types=["HATCH", "TEXT", "MTEXT"])

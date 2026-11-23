@@ -128,3 +128,15 @@ def test_le_altura_do_corte(tmp_path):
     assert it["ACB-PAREDE-01"].quantidade == pytest.approx(7 * 2.49)  # BANHO, parede 01
     assert "corte" in it["ACB-PAREDE-01"].observacao
     assert it["ACB-PAREDE-02"].quantidade is None  # SALA não aparece no corte
+
+
+def test_le_altura_de_corte_em_dxf_binario(tmp_path):
+    from quantum.cortes import ler_alturas_corte
+
+    ascii_ = tmp_path / "corte.dxf"
+    criar_corte(ascii_)
+    binario = tmp_path / "corte_bin.dxf"
+    ezdxf.readfile(ascii_).saveas(binario, fmt="bin")
+    assert binario.read_bytes().startswith(b"AutoCAD Binary DXF")
+    alt = ler_alturas_corte(binario)
+    assert [(a.ambiente, a.altura_m) for a in alt] == [("BANHO", pytest.approx(2.49))]
