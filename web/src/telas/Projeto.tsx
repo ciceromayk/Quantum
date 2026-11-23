@@ -106,7 +106,7 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
             {pav.nome} <span className="selo">× {pav.repeticoes}</span>
           </h2>
           <p className="discreto">
-            {params.length ? params.map(([k, v]) => `${k} = ${v} m`).join(" · ") : "Sem parâmetros informados"}
+            {params.length ? params.map(([k, v]) => `${k} = ${v}${v === "teto" ? "" : " m"}`).join(" · ") : "Sem parâmetros informados"}
             {pav.unidade && ` · unidade ${pav.unidade}`}
           </p>
         </div>
@@ -125,6 +125,7 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
         </label>
       </div>
       {erro && <p className="erro">{erro}</p>}
+      <Cortes pav={pav} aoMudar={aoMudar} aoErrar={setErro} />
       {analises.length === 0 ? (
         <p className="discreto">Nenhum arquivo enviado. Exporte o pavimento como DXF no CAD e envie aqui.</p>
       ) : (
@@ -173,5 +174,70 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
         </table>
       )}
     </section>
+  );
+}
+
+function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void; aoErrar: (m: string) => void }) {
+  const [enviando, setEnviando] = useState(false);
+
+  async function enviar(arquivos: FileList | null) {
+    if (!arquivos?.length) return;
+    aoErrar("");
+    setEnviando(true);
+    try {
+      for (const a of Array.from(arquivos)) await api.enviarCorte(pav.id, a);
+      aoMudar();
+    } catch (err) {
+      aoErrar((err as Error).message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="cortes">
+      <div className="cortes-topo">
+        <strong>Cortes para alturas de revestimento</strong>
+        <label className={`botao secundario ${enviando ? "desativado" : ""}`}>
+          {enviando ? "Enviando…" : "Adicionar cortes"}
+          <input
+            type="file"
+            accept=".dxf"
+            multiple
+            hidden
+            disabled={enviando}
+            onChange={(e) => {
+              enviar(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+      <p className="discreto pequeno">
+        Alturas tiradas de cortes valem só para os ambientes que aparecem cortados e precisam de conferência. Os demais ficam como
+        pendência até a altura ser informada em Parâmetros. Depois de adicionar ou remover cortes, use Reprocessar na análise.
+      </p>
+      {pav.cortes.length > 0 && (
+        <ul className="lista-cortes">
+          {pav.cortes.map((c) => (
+            <li key={c.id}>
+              {c.nome} <span className="discreto pequeno">({(c.tamanho / 1048576).toFixed(1).replace(".", ",")} MB)</span>
+              {c.tamanho > 50 * 1048576 && <span className="erro pequeno"> arquivo grande: o processamento pode ficar lento</span>}
+              <button
+                className="secundario-btn"
+                onClick={() =>
+                  api
+                    .removerCorte(c.id)
+                    .then(aoMudar)
+                    .catch((e) => aoErrar((e as Error).message))
+                }
+              >
+                Remover
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

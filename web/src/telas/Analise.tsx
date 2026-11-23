@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { AnaliseDetalhe, api, Item, Pavimento, Pendencia, Severidade } from "../api";
+import { Acabamentos, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
 import { dataHora, num, SEVERIDADE, STATUS } from "../formato";
 
 type Aba = "pendencias" | "quantitativos" | "parametros" | "camadas";
@@ -11,11 +11,13 @@ export default function AnaliseTela({ id }: { id: number }) {
   const [nomeProjeto, setNomeProjeto] = useState("");
   const [aba, setAba] = useState<Aba>("pendencias");
   const [erro, setErro] = useState("");
+  const [temDxf, setTemDxf] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
       const a = await api.analise(id);
       setAnalise(a);
+      setTemDxf(await api.temDxfAcabamentos(id));
       const p = await api.pavimento(a.pavimento_id);
       setPav(p);
       const proj = await api.projeto(p.projeto_id);
@@ -60,6 +62,11 @@ export default function AnaliseTela({ id }: { id: number }) {
             <button className="botao secundario" onClick={() => api.baixarRelatorio(id, "md").catch((e) => setErro(e.message))}>
               Baixar relatório
             </button>
+            {temDxf && (
+              <button className="botao secundario" onClick={() => api.baixarRelatorio(id, "dxf").catch((e) => setErro(e.message))}>
+                Baixar DXF de acabamentos
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -103,7 +110,9 @@ export default function AnaliseTela({ id }: { id: number }) {
 
           {aba === "pendencias" && <Pendencias lista={r.pendencias} />}
           {aba === "quantitativos" && <Quantitativos itens={r.itens} />}
-          {aba === "parametros" && <Parametros pav={pav} analiseId={id} aoSalvar={carregar} />}
+          {aba === "parametros" && (
+            <ParametrosTela pav={pav} analiseId={id} aoSalvar={carregar} acabamentos={r.acabamentos as Acabamentos | undefined} />
+          )}
           {aba === "camadas" && <Camadas itens={r.itens} naoClassificadas={r.camadas_nao_classificadas} />}
         </>
       )}
@@ -173,11 +182,23 @@ function Quantitativos({ itens }: { itens: Item[] }) {
   );
 }
 
-function Parametros({ pav, analiseId, aoSalvar }: { pav: Pavimento; analiseId: number; aoSalvar: () => void }) {
+function ParametrosTela({
+  pav,
+  analiseId,
+  aoSalvar,
+  acabamentos,
+}: {
+  pav: Pavimento;
+  analiseId: number;
+  aoSalvar: () => void;
+  acabamentos?: Acabamentos;
+}) {
   const [conhecidos, setConhecidos] = useState<Record<string, string>>({});
   const [valores, setValores] = useState<Record<string, string>>(
     Object.fromEntries(Object.entries(pav.parametros).map(([k, v]) => [k, String(v).replace(".", ",")])),
   );
+  const paredes = acabamentos?.codigos_parede ?? [];
+  const descParede = (c: string) => acabamentos?.catalogo?.parede?.[c] ?? "código fora do quadro";
   const [unidade, setUnidade] = useState<string>(pav.unidade ?? "");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
@@ -189,9 +210,13 @@ function Parametros({ pav, analiseId, aoSalvar }: { pav: Pavimento; analiseId: n
   async function salvar(e: FormEvent) {
     e.preventDefault();
     setErro("");
-    const limpos: Record<string, number> = {};
+    const limpos: Parametros = {};
     for (const [k, v] of Object.entries(valores)) {
       if (!v.trim()) continue;
+      if (v === "teto" && k.startsWith("altura_parede_")) {
+        limpos[k] = "teto";
+        continue;
+      }
       const n = Number(v.replace(",", "."));
       if (!Number.isFinite(n) || n <= 0) {
         setErro(`Valor inválido para ${conhecidos[k] ?? k}`);
@@ -211,7 +236,7 @@ function Parametros({ pav, analiseId, aoSalvar }: { pav: Pavimento; analiseId: n
     }
   }
 
-  const nomes = [...new Set([...Object.keys(conhecidos), ...Object.keys(valores)])];
+  const nomes = [...new Set([...Object.keys(conhecidos), ...Object.keys(valores)])].filter((k) => !k.startsWith("altura_parede_"));
   return (
     <section className="cartao">
       <h2>Parâmetros do pavimento</h2>
@@ -231,6 +256,36 @@ function Parametros({ pav, analiseId, aoSalvar }: { pav: Pavimento; analiseId: n
             />
           </label>
         ))}
+        {paredes.length > 0 && (
+          <div className="form-acoes">
+            <h2>Altura do revestimento de parede</h2>
+            <p className="faixa">{acabamentos?.aviso_alturas}</p>
+          </div>
+        )}
+        {paredes.map((c) => {
+          const k = `altura_parede_${c}`;
+          const ateTeto = valores[k] === "teto";
+          return (
+            <label key={k}>
+              Parede {c}: {descParede(c)}
+              <input
+                inputMode="decimal"
+                value={ateTeto ? "" : (valores[k] ?? "")}
+                disabled={ateTeto}
+                onChange={(e) => setValores({ ...valores, [k]: e.target.value })}
+                placeholder={ateTeto ? "até o teto (pé-direito)" : "altura em m, não informada"}
+              />
+              <span className="marcar">
+                <input
+                  type="checkbox"
+                  checked={ateTeto}
+                  onChange={(e) => setValores({ ...valores, [k]: e.target.checked ? "teto" : "" })}
+                />{" "}
+                até o teto
+              </span>
+            </label>
+          );
+        })}
         <label>
           Unidade do desenho
           <select value={unidade} onChange={(e) => setUnidade(e.target.value)}>

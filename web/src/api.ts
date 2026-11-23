@@ -23,9 +23,40 @@ export interface Pavimento {
   projeto_id: number;
   nome: string;
   repeticoes: number;
-  parametros: Record<string, number>;
+  parametros: Parametros;
   unidade: string | null;
   analises: AnaliseResumo[];
+  cortes: CorteResumo[];
+}
+
+/** Corte/vista em DXF usado para ler alturas de revestimento do pavimento. */
+export interface CorteResumo {
+  id: number;
+  nome: string;
+  tamanho: number;
+  criado_em: string;
+}
+interface CorteReg extends CorteResumo {
+  pavimento_id: number;
+  dados: ArrayBuffer;
+}
+
+/** Valores em metros; "teto" = altura até o teto (usa o pé-direito). */
+export type Parametros = Record<string, number | "teto">;
+
+export interface AmbienteAcabamento {
+  nome: string;
+  area_rotulo: number;
+  codigos: Partial<Record<"piso" | "parede" | "teto", string>>;
+  area_contorno_m2: number | null;
+  perimetro_m: number | null;
+}
+
+export interface Acabamentos {
+  catalogo: Partial<Record<"piso" | "parede" | "teto" | "rodape", Record<string, string>>>;
+  codigos_parede: string[];
+  aviso_alturas: string;
+  ambientes: AmbienteAcabamento[];
 }
 
 export interface Projeto {
@@ -63,7 +94,8 @@ export interface Resultado {
   itens: Item[];
   pendencias: Pendencia[];
   camadas_nao_classificadas: Record<string, number>;
-  parametros: Record<string, number>;
+  parametros: Parametros;
+  acabamentos?: Acabamentos | Record<string, never>;
   aviso: string;
 }
 
@@ -74,12 +106,13 @@ export interface AnaliseDetalhe extends AnaliseResumo {
 }
 
 type ProjetoReg = Omit<Projeto, "pavimentos">;
-type PavimentoReg = Omit<Pavimento, "analises">;
+type PavimentoReg = Omit<Pavimento, "analises" | "cortes">;
 type AnaliseReg = Omit<AnaliseDetalhe, "resultado">;
 interface RelatorioReg {
   resultado: Resultado;
   markdown: string;
   xlsx_base64: string;
+  dxf_acabamentos_base64?: string | null;
 }
 
 export const AVISO =
@@ -114,8 +147,9 @@ function motor(): Worker {
 
 function rodarNoMotor(
   dxf: ArrayBuffer,
-  parametros: Record<string, number>,
+  parametros: Parametros,
   unidade: string | null,
+  cortes: { nome: string; dados: ArrayBuffer }[],
   aoProgredir: (etapa: string) => void,
 ): Promise<RelatorioReg> {
   const id = ++seq;
@@ -134,7 +168,7 @@ function rodarNoMotor(
     w.addEventListener("message", ouvir);
     const basePy = new URL("py/", document.baseURI).href;
     // copia o buffer: o original continua guardado no IndexedDB
-    w.postMessage({ id, dxf: dxf.slice(0), parametros, unidade, basePy });
+    w.postMessage({ id, dxf: dxf.slice(0), parametros, unidade, basePy, cortes: cortes.map((c) => ({ nome: c.nome, dados: c.dados.slice(0) })) });
   });
 }
 
@@ -157,7 +191,8 @@ async function processar(analiseId: number) {
   }
   await atualizarAnalise(analiseId, { status: "processando", erro: null, etapa: "Preparando…" });
   try {
-    const saida = await rodarNoMotor(dxf, pav.parametros, pav.unidade, (etapa) => {
+    const cortes = (await banco.todos<CorteReg>("cortes")).filter((c) => c.pavimento_id === pav.id);
+    const saida = await rodarNoMotor(dxf, pav.parametros, pav.unidade, cortes, (etapa) => {
       atualizarAnalise(analiseId, { etapa });
     });
     await banco.gravar("relatorios", saida, analiseId);
@@ -191,8 +226,12 @@ export async function recuperarInterrompidas() {
 // --- leitura ---------------------------------------------------------------------------
 
 async function montarPavimento(p: PavimentoReg, analises: AnaliseReg[]): Promise<Pavimento> {
+  const cortes = (await banco.todos<CorteReg>("cortes"))
+    .filter((c) => c.pavimento_id === p.id)
+    .map(({ id, nome, tamanho, criado_em }) => ({ id, nome, tamanho, criado_em }));
   return {
     ...p,
+    cortes,
     analises: analises
       .filter((a) => a.pavimento_id === p.id)
       .sort((x, y) => x.revisao - y.revisao)
@@ -246,7 +285,7 @@ export const api = {
     if (!Number.isInteger(d.repeticoes) || d.repeticoes < 1 || d.repeticoes > 200) throw new Error("Repetições entre 1 e 200");
     const reg = { projeto_id: projetoId, nome: d.nome.trim(), repeticoes: d.repeticoes, parametros: {}, unidade: null };
     const id = await banco.gravar("pavimentos", reg);
-    return { ...reg, id, analises: [] } as Pavimento;
+    return { ...reg, id, analises: [], cortes: [] } as Pavimento;
   },
 
   pavimento: async (id: number) => {
@@ -254,10 +293,11 @@ export const api = {
     return montarPavimento(p, await banco.todos<AnaliseReg>("analises"));
   },
 
-  definirParametros: async (id: number, valores: Record<string, number>, unidade: string | null) => {
+  definirParametros: async (id: number, valores: Parametros, unidade: string | null) => {
     const p = exigir(await banco.obter<PavimentoReg>("pavimentos", id), "Pavimento");
     for (const [k, v] of Object.entries(valores)) {
-      if (!(v > 0 && v <= 100)) throw new Error(`${k} deve estar entre 0 e 100 metros`);
+      if (v === "teto" && k.startsWith("altura_parede_")) continue;
+      if (!(typeof v === "number" && v > 0 && v <= 100)) throw new Error(`${k} deve estar entre 0 e 100 metros`);
     }
     await banco.gravar("pavimentos", { ...p, parametros: valores, unidade });
     return api.pavimento(id);
@@ -288,6 +328,20 @@ export const api = {
     return { ...reg, id } as AnaliseResumo;
   },
 
+  temDxfAcabamentos: async (id: number) => !!(await banco.obter<RelatorioReg>("relatorios", id))?.dxf_acabamentos_base64,
+
+  /** Cortes valem para as próximas análises do pavimento (use Reprocessar nas anteriores). */
+  enviarCorte: async (pavimentoId: number, arquivo: File) => {
+    exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
+    const ext = arquivo.name.toLowerCase().split(".").pop();
+    if (ext === "dwg") throw new Error("DWG não é lido no navegador. Exporte o corte como DXF e envie novamente.");
+    if (ext !== "dxf") throw new Error("Envie o corte em .dxf");
+    if (arquivo.size > TAMANHO_MAX_MB * 1024 * 1024) throw new Error(`Arquivo maior que ${TAMANHO_MAX_MB} MB`);
+    const reg = { pavimento_id: pavimentoId, nome: arquivo.name, tamanho: arquivo.size, criado_em: agora(), dados: await arquivo.arrayBuffer() };
+    await banco.gravar("cortes", reg);
+  },
+  removerCorte: async (id: number) => banco.apagar("cortes", id),
+
   analise: async (id: number): Promise<AnaliseDetalhe> => {
     const a = exigir(await banco.obter<AnaliseReg>("analises", id), "Análise");
     const rel = await banco.obter<RelatorioReg>("relatorios", id);
@@ -302,10 +356,14 @@ export const api = {
     return api.analise(id);
   },
 
-  baixarRelatorio: async (id: number, formato: "xlsx" | "md") => {
+  baixarRelatorio: async (id: number, formato: "xlsx" | "md" | "dxf") => {
     const a = exigir(await banco.obter<AnaliseReg>("analises", id), "Análise");
     const rel = exigir(await banco.obter<RelatorioReg>("relatorios", id), "Relatório");
-    if (formato === "md") {
+    if (formato === "dxf") {
+      if (!rel.dxf_acabamentos_base64) throw new Error("Nenhum ambiente com contorno: o DXF de acabamentos não foi gerado.");
+      const bytes = Uint8Array.from(atob(rel.dxf_acabamentos_base64), (c) => c.charCodeAt(0));
+      baixar(`${nomeBase(a)}_acabamentos.dxf`, new Blob([bytes], { type: "application/dxf" }));
+    } else if (formato === "md") {
       baixar(`${nomeBase(a)}.md`, new Blob([rel.markdown], { type: "text/markdown;charset=utf-8" }));
     } else {
       const bytes = Uint8Array.from(atob(rel.xlsx_base64), (c) => c.charCodeAt(0));
@@ -319,7 +377,11 @@ export const api = {
     const pavs = (await banco.todos<PavimentoReg>("pavimentos")).filter((x) => x.projeto_id === id);
     const analises = (await banco.todos<AnaliseReg>("analises")).filter((a) => pavs.some((x) => x.id === a.pavimento_id));
     const relatorios: Record<number, RelatorioReg | undefined> = {};
-    for (const a of analises) relatorios[a.id] = await banco.obter<RelatorioReg>("relatorios", a.id);
+    for (const a of analises) {
+      const r = await banco.obter<RelatorioReg>("relatorios", a.id);
+      // o DXF gerado é grande e sai de novo ao reprocessar: não vai no backup
+      relatorios[a.id] = r && { ...r, dxf_acabamentos_base64: null };
+    }
     const dados = { formato: "quantum-projeto", versao: 1, exportado_em: agora(), aviso: AVISO, projeto: p, pavimentos: pavs, analises, relatorios };
     baixar(`${p.nome.replace(/[^\w\-À-ú ]+/g, "_")}.quantum.json`, new Blob([JSON.stringify(dados)], { type: "application/json" }));
   },

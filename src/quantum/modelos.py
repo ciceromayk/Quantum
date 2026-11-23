@@ -48,6 +48,8 @@ class Entidade:
     area_rotulo: float | None = None  # m² lido de rótulo (nome + área) do ambiente
     texto: str | None = None  # conteúdo (TEXT/MTEXT)
     insercao: tuple[float, float] | None = None
+    ponto_texto: tuple[float, float] | None = None  # posição real do texto (blocos BIM ficam em 0,0)
+    atributos: list[tuple[str, float, float]] = field(default_factory=list)  # (texto, x, y) dos ATTRIB
 
 
 @dataclass
@@ -116,7 +118,8 @@ class Relatorio:
     orcamento: list[ItemOrcamento] = field(default_factory=list)
     bdi: float | None = None
     camadas_nao_classificadas: dict[str, int] = field(default_factory=dict)
-    parametros: dict[str, float] = field(default_factory=dict)
+    parametros: dict[str, float | str] = field(default_factory=dict)
+    acabamentos: dict = field(default_factory=dict)  # resumo do agente de acabamentos (ambientes, catálogo)
     aviso: str = AVISO_ESTIMATIVA
 
     @property

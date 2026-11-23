@@ -59,6 +59,7 @@ class Regras:
     disciplinas: list[RegraDisciplina]
     ignorar: list[re.Pattern]
     origem: str
+    acabamentos: dict = field(default_factory=dict)
 
     def ignorada(self, camada: str) -> bool:
         return any(p.search(camada) for p in self.ignorar)
@@ -100,4 +101,9 @@ def carregar_regras(caminho: str | Path | None = None) -> Regras:
                 )
             )
         disciplinas.append(RegraDisciplina(chave=chave, nome=d.get("nome", chave), itens=itens))
-    return Regras(disciplinas=disciplinas, ignorar=_rx(dados.get("ignorar_camadas")), origem=str(caminho))
+    return Regras(
+        disciplinas=disciplinas,
+        ignorar=_rx(dados.get("ignorar_camadas")),
+        origem=str(caminho),
+        acabamentos=dados.get("acabamentos") or {},
+    )
