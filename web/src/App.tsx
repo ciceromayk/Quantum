@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AVISO, recuperarInterrompidas } from "./api";
+import { banco } from "./banco";
 import Projetos from "./telas/Projetos";
 import ProjetoTela from "./telas/Projeto";
 import AnaliseTela from "./telas/Analise";
@@ -18,10 +19,17 @@ function useRota() {
 export default function App() {
   const partes = useRota();
   const [pronto, setPronto] = useState(false);
+  const [erro, setErro] = useState("");
+  const [versaoNova, setVersaoNova] = useState(false);
   useEffect(() => {
-    recuperarInterrompidas()
-      .catch(() => undefined)
-      .finally(() => setPronto(true));
+    banco
+      .abrir()
+      .then(() => recuperarInterrompidas().catch(() => undefined))
+      .then(() => setPronto(true))
+      .catch((e: Error) => setErro(e.message));
+    const f = () => setVersaoNova(true);
+    window.addEventListener("quantum:versao-nova", f);
+    return () => window.removeEventListener("quantum:versao-nova", f);
   }, []);
 
   let tela = <Projetos />;
@@ -36,7 +44,21 @@ export default function App() {
         </a>
         <span className="subtitulo">Quantitativos e orçamento a partir de DXF</span>
       </header>
-      <main className="conteudo">{pronto ? tela : <p className="discreto">Carregando…</p>}</main>
+      <main className="conteudo">
+        {versaoNova && (
+          <p className="erro">O Quantum foi atualizado em outra aba. Recarregue esta página para continuar.</p>
+        )}
+        {erro ? (
+          <div className="cartao">
+            <p className="erro">{erro}</p>
+            <button onClick={() => window.location.reload()}>Recarregar</button>
+          </div>
+        ) : pronto ? (
+          tela
+        ) : (
+          <p className="discreto">Abrindo os dados salvos neste navegador…</p>
+        )}
+      </main>
       <footer className="aviso-rodape">
         <p>{AVISO}</p>
         <p>

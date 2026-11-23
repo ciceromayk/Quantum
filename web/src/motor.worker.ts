@@ -63,6 +63,13 @@ self.onmessage = async (ev: MessageEvent<Pedido>) => {
     postMessage({ id, tipo: "ok", saida: JSON.parse(texto) });
   } catch (e) {
     let msg = e instanceof Error ? e.message : String(e);
+    if (/fatal error/i.test(msg)) {
+      // O Pyodide não se recupera de um erro fatal: descarta e recarrega no próximo pedido.
+      pyodide = null;
+      carregando = null;
+      postMessage({ id, tipo: "erro", erro: "O motor Python travou neste arquivo. Use Reprocessar; se repetir, envie o DXF para análise." });
+      return;
+    }
     // Erros do Python chegam com o traceback inteiro; mostra só a última linha.
     const linhas = msg.trim().split("\n");
     msg = linhas[linhas.length - 1] || msg;
