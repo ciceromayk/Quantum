@@ -12,3 +12,5 @@ saida/
 dados/
 web/node_modules/
 web/dist/
+web/public/py/
+web/public/pyodide/

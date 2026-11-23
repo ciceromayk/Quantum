@@ -145,6 +145,9 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
                 <td>{a.arquivo_nome}</td>
                 <td>
                   <span className={`status status-${a.status}`}>{STATUS[a.status]}</span>
+                  {a.etapa && (a.status === "na_fila" || a.status === "processando") && (
+                    <div className="discreto pequeno">{a.etapa}</div>
+                  )}
                   {a.erro && <div className="erro pequeno">{a.erro}</div>}
                 </td>
                 <td>{dataHora(a.criado_em)}</td>

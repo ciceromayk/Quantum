@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { AVISO, recuperarInterrompidas } from "./api";
 import Projetos from "./telas/Projetos";
 import ProjetoTela from "./telas/Projeto";
 import AnaliseTela from "./telas/Analise";
@@ -17,9 +17,11 @@ function useRota() {
 
 export default function App() {
   const partes = useRota();
-  const [aviso, setAviso] = useState<string>("");
+  const [pronto, setPronto] = useState(false);
   useEffect(() => {
-    api.saude().then((s) => setAviso(s.aviso)).catch(() => setAviso(""));
+    recuperarInterrompidas()
+      .catch(() => undefined)
+      .finally(() => setPronto(true));
   }, []);
 
   let tela = <Projetos />;
@@ -34,8 +36,14 @@ export default function App() {
         </a>
         <span className="subtitulo">Quantitativos e orçamento a partir de DXF</span>
       </header>
-      <main className="conteudo">{tela}</main>
-      {aviso && <footer className="aviso-rodape">{aviso}</footer>}
+      <main className="conteudo">{pronto ? tela : <p className="discreto">Carregando…</p>}</main>
+      <footer className="aviso-rodape">
+        <p>{AVISO}</p>
+        <p>
+          Tudo roda neste navegador: os arquivos não são enviados a nenhum servidor e os dados ficam salvos só aqui. Use
+          Exportar para fazer backup ou levar o projeto para outro computador.
+        </p>
+      </footer>
     </div>
   );
 }

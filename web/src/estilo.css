@@ -399,3 +399,12 @@ button:disabled,
     padding: 12px 16px;
   }
 }
+
+.barra {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0;
+}
+.aviso-rodape p {
+  margin: 0 0 8px;
+}

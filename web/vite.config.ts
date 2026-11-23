@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Em desenvolvimento, as chamadas /api vão para o uvicorn na porta 8000.
+// base relativa: funciona em https://<usuario>.github.io/<repositorio>/ sem configuração.
 export default defineConfig({
+  base: "./",
   plugins: [react()],
-  server: { proxy: { "/api": "http://127.0.0.1:8000" } },
+  worker: { format: "es" },
   build: { outDir: "dist" },
 });

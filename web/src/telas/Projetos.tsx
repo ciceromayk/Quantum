@@ -48,6 +48,29 @@ export default function Projetos() {
         </form>
       </section>
 
+      <div className="barra">
+        <label className="botao secundario">
+          Importar projeto
+          <input
+            type="file"
+            accept=".json"
+            hidden
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              setErro("");
+              try {
+                const id = await api.importarProjeto(f);
+                window.location.hash = `#/projetos/${id}`;
+              } catch (err) {
+                setErro((err as Error).message);
+              }
+            }}
+          />
+        </label>
+      </div>
+
       {lista === null ? (
         <p className="discreto">Carregando…</p>
       ) : lista.length === 0 ? (
@@ -61,6 +84,7 @@ export default function Projetos() {
               <th>Data-base</th>
               <th className="num">Pavimentos</th>
               <th>Criado em</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -73,6 +97,17 @@ export default function Projetos() {
                 <td>{p.data_base ?? "—"}</td>
                 <td className="num">{p.pavimentos.length}</td>
                 <td>{dataHora(p.criado_em)}</td>
+                <td className="num">
+                  <button
+                    className="secundario-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      api.exportarProjeto(p.id).catch((err) => setErro(err.message));
+                    }}
+                  >
+                    Exportar
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

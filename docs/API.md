@@ -1,5 +1,7 @@
 # API do Quantum (etapa 1)
 
+> A interface publicada no GitHub Pages roda no navegador e **não usa esta API**. Ela fica para quem quiser hospedar um servidor próprio (ex.: dados compartilhados pela equipe).
+
 Servidor: `uvicorn quantum_api.main:app --reload` → interface em `/`, rotas sob `/api`, documentação interativa em `/docs`.
 
 | Método | Rota | O que faz |

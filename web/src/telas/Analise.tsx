@@ -56,17 +56,15 @@ export default function AnaliseTela({ id }: { id: number }) {
         </div>
         {analise.status === "concluida" && (
           <div className="acoes">
-            <a className="botao" href={api.urlRelatorio(id, "xlsx")}>
-              Baixar Excel
-            </a>
-            <a className="botao secundario" href={api.urlRelatorio(id, "md")}>
+            <button onClick={() => api.baixarRelatorio(id, "xlsx").catch((e) => setErro(e.message))}>Baixar Excel</button>
+            <button className="botao secundario" onClick={() => api.baixarRelatorio(id, "md").catch((e) => setErro(e.message))}>
               Baixar relatório
-            </a>
+            </button>
           </div>
         )}
       </div>
       {erro && <p className="erro">{erro}</p>}
-      {emAndamento && <p className="faixa">Processando o arquivo… a página atualiza sozinha.</p>}
+      {emAndamento && <p className="faixa">{analise.etapa || "Processando o arquivo…"} A página atualiza sozinha.</p>}
       {analise.status === "erro" && <p className="erro">{analise.erro}</p>}
 
       {r && (
