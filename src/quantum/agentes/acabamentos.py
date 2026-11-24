@@ -48,6 +48,7 @@ class Ambiente:
     contorno: list[tuple[float, float]] | None = None
     contorno_handle: str | None = None
     contorno_origem: str | None = None  # "polilinha", "paredes", "divisao" ou "proposta"
+    trechos_parede: list[list[tuple[float, float]]] = field(default_factory=list)  # só onde há parede
     area_contorno_m2: float | None = None
     perimetro_m: float | None = None
 
@@ -181,7 +182,10 @@ class AgenteAcabamentos:
                                   "Código(s) nas etiquetas que não estão no quadro de acabamentos: " + ", ".join(f"{NOME_TIPO[t]} {c}" for t, c in fora),
                                   acao_sugerida="Confira o quadro de acabamentos do projeto."))
 
-        dif = [a for a in ambientes if a.area_contorno_m2 is not None and abs(a.area_contorno_m2 - a.area_rotulo) > 0.01 * a.area_rotulo]
+        # só para polilinha do usuário: no contorno detectado a diferença é esperada (a linha segue
+        # reta nas esquadrias, sem entrar nos batentes e requadros)
+        dif = [a for a in ambientes if a.contorno_origem == "polilinha"
+               and a.area_contorno_m2 is not None and abs(a.area_contorno_m2 - a.area_rotulo) > 0.01 * a.area_rotulo]
         if dif:
             pend.append(Pendencia(
                 DISC, Severidade.ALERTA,
@@ -200,6 +204,7 @@ class AgenteAcabamentos:
 
         resumo = {
             "catalogo": catalogo,
+            "fator_m": f,
             "codigos_parede": sorted({a.codigos["parede"] for a in ambientes if "parede" in a.codigos}),
             "aviso_alturas": AVISO_ALTURAS,
             "grupos_integrados": self.grupos,
@@ -208,6 +213,7 @@ class AgenteAcabamentos:
                     "nome": a.nome, "area_rotulo": a.area_rotulo, "codigos": a.codigos,
                     "area_contorno_m2": a.area_contorno_m2, "perimetro_m": a.perimetro_m,
                     "contorno": a.contorno, "contorno_origem": a.contorno_origem, "handle": a.handle, "contorno_handle": a.contorno_handle,
+                    "trechos_parede": a.trechos_parede,
                 }
                 for a in ambientes
             ],
@@ -225,6 +231,7 @@ class AgenteAcabamentos:
                 a.contorno_origem = "polilinha"
                 a.area_contorno_m2 = e.area * f * f
                 a.perimetro_m = _perimetro(e.pontos) * f
+                a.trechos_parede = [list(e.pontos)]  # polilinha do usuário: todo o contorno conta como parede
         # Sem polilinha: detecta o ambiente pelas paredes, esquadrias e linhas de divisão.
         falta = [a for a in ambientes if a.contorno is None]
         msp = getattr(d, "modelspace", None)
@@ -238,6 +245,7 @@ class AgenteAcabamentos:
             a.contorno, a.contorno_origem = c.pontos, c.origem
             a.area_contorno_m2 = c.area * f * f
             a.perimetro_m = c.perimetro_parede * f  # só onde há parede: divisas abertas não contam
+            a.trechos_parede = c.trechos_parede
         self.grupos = [
             {"ambientes": [falta[i].nome for i in g.rotulos], "handles": [falta[i].handle for i in g.rotulos], "area_m2": g.contorno.area * f * f,
              "perimetro_m": g.contorno.perimetro_parede * f, "contorno": g.contorno.pontos}
@@ -253,7 +261,9 @@ class AgenteAcabamentos:
             pend.append(Pendencia(
                 DISC, Severidade.INFO,
                 f"{len(det)} contorno(s) detectado(s) pela geometria (paredes, esquadrias e linhas de projeção), "
-                "aceitos só porque a área confere com o rótulo. Confira no DXF gerado.",
+                "aceitos só porque a área confere com o rótulo. A linha segue reta na face da parede, sem entrar "
+                "nos batentes de porta e requadros de janela, então a área medida fica um pouco abaixo da do "
+                "rótulo (cerca de 1%). Confira no DXF gerado.",
             ))
         prop = [a for a in ambientes if a.contorno_origem == "proposta"]
         if prop:

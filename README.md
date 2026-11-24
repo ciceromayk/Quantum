@@ -91,8 +91,13 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
   escrito na faixa. **Alturas tiradas de cortes valem só para os ambientes cortados e precisam de
   conferência.** A altura do corte vale para o ambiente da planta com o mesmo nome; se o mesmo
   nome aparece com alturas diferentes, nenhuma é usada.
-- Gera um **DXF novo** (`<arquivo>_acabamentos.dxf`) com polilinhas fechadas nas camadas
-  `QTD-PISO-xx`, `QTD-PAREDE-xx` e `QTD-TETO-xx`. O original não é alterado.
+- Gera um **DXF novo** (`<arquivo>_acabamentos.dxf`), montado do zero em AutoCAD 2013 com uma
+  cópia do Model. O original não é alterado. As polilinhas saem com 2,5 cm de espessura:
+  - `QTD-PISO-xx` e `QTD-TETO-xx`: polilinha **fechada**, que é a área do ambiente;
+  - `QTD-PAREDE-xx`: polilinhas **abertas**, só nos trechos colados a uma parede (a divisa com o
+    ambiente vizinho, por projeção ou proposta, não é parede e fica de fora).
+  - O contorno **segue reto na face da parede**: batentes de porta e requadros de janela não
+    entram, então a área medida pode ficar pouco abaixo da área do rótulo.
 
 ## Só o Model e visualizador
 
