@@ -287,3 +287,20 @@ def test_vao_sem_linha_de_parede_fecha_pelo_arco(tmp_path):
     assert a["contorno_origem"] == "paredes"
     assert a["area_contorno_m2"] == pytest.approx(12.0, rel=0.02)
     assert min(y for _, y in a["contorno"]) >= -0.16  # a folha aberta não entra no contorno
+
+
+def test_degrau_de_parede_fica_no_contorno_e_requadro_some():
+    """Requadro de janela (mesmo plano) é aplainado; degrau de parede (ponta, viradinha) fica."""
+    from quantum.ambientes import _retificar
+    from shapely.geometry import Polygon
+
+    requadro = Polygon([(0, 0), (5, 0), (5, 3), (3, 3), (3, 3.08), (2, 3.08), (2, 3), (0, 3)])
+    reto = _retificar(requadro, 0.15)
+    assert len(reto.exterior.coords) == 5  # virou retângulo
+    assert reto.area == pytest.approx(15.0, abs=0.01)
+
+    degrau = Polygon([(0, 0), (5, 0), (5, 3), (2, 3), (2, 3.11), (0, 3.11)])
+    reto = _retificar(degrau, 0.15)
+    pts = [(round(x, 3), round(y, 3)) for x, y in reto.exterior.coords]
+    assert (2.0, 3.0) in pts and (2.0, 3.11) in pts  # a virada continua lá
+    assert reto.area == pytest.approx(degrau.area, abs=0.001)
