@@ -127,3 +127,39 @@ def test_muitos_pedacos_de_projecao_nao_viram_divisa_proposta(tmp_path):
     assert a["SALA"]["contorno_origem"] == "divisao"
     assert a["SALA"]["area_contorno_m2"] == pytest.approx(12.0, rel=0.01)
     assert a["VARANDA"]["area_contorno_m2"] == pytest.approx(8.0, rel=0.01)
+
+
+def test_dxf_gerado_e_montado_do_zero_e_abre_limpo(tmp_path):
+    """O DXF de acabamentos é um arquivo novo (AutoCAD 2013) com a cópia do Model: cotas entram
+    explodidas, máscaras são recriadas e nada que o AutoCAD recuse vem do arquivo de origem."""
+    from ezdxf import recover
+
+    arq = tmp_path / "planta.dxf"
+    criar_planta(arq)
+    doc = ezdxf.readfile(arq)
+    msp = doc.modelspace()
+    doc.dimstyles.new("COTA")
+    msp.add_linear_dim(base=(0, 6), p1=(0, 4.15), p2=(3.15, 4.15), dimstyle="COTA").render()
+    msp.add_wipeout([(40, 0), (41, 0), (41, 1), (40, 1)])
+    doc.appids.new("APP_ESTRANHO")
+    msp.add_line((50, 0), (51, 0)).set_xdata("APP_ESTRANHO", [(1000, "lixo")])
+    doc.layouts.new("PRANCHA").add_line((0, 0), (1, 1))
+    doc.saveas(arq)
+
+    rel = analisar(arq)
+    rel.acabamentos["catalogo"]["piso"]["01"] = "PISO UM\nlinha dois\tcom tab"
+    saida = tmp_path / "planta_acabamentos.dxf"
+    assert gerar_dxf_acabamentos(arq, rel.acabamentos, saida) > 0
+
+    novo, auditoria = recover.readfile(saida)
+    assert novo.dxfversion == "AC1027"
+    assert not auditoria.errors and not auditoria.fixes
+    verif = novo.audit()
+    assert not verif.errors and not verif.fixes
+    nmsp = novo.modelspace()
+    assert len(nmsp.query("DIMENSION")) == 0 and len(nmsp.query("MTEXT TEXT")) > 0  # cota explodida
+    assert len(nmsp.query("WIPEOUT")) == 1
+    assert "APP_ESTRANHO" not in novo.appids
+    assert "PRANCHA" not in novo.layouts.names()
+    assert novo.layers.get("QTD-PISO-01").description == "PISO UM linha dois com tab"
+    assert novo.header["$INSUNITS"] == 6

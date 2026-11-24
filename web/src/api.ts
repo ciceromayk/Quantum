@@ -157,12 +157,61 @@ const converterDwg: ConverterDwg = (dwg, versao) =>
       if (ev.data.tipo === "ok") ok({ dxf: ev.data.dxf as Blob, aviso: ev.data.aviso });
       else falha(new Error(ev.data.erro));
     };
+    w.onmessageerror = () => {
+      fim();
+      falha(new Error(`A conversão do DWG não devolveu o resultado (provável falta de memória). Exporte o desenho como DXF e envie o DXF.`));
+    };
     w.onerror = (ev) => {
       fim();
       falha(new Error(`O leitor de DWG não carregou (${ev.message || "erro no worker"}). Exporte o desenho como DXF e envie o DXF.`));
     };
     w.postMessage({ dwg, versao });
   });
+/** DWG acima disso pode esgotar a memória do navegador na conversão (a aba pode até fechar). */
+export const DWG_GRANDE_MB = 40;
+
+// --- conversão interrompida ---------------------------------------------------------------
+// Se a aba cair no meio da conversão (falta de memória), nenhum erro chega à tela. Uma marca
+// no localStorage, apagada no fim, permite explicar o que houve quando a página reabre.
+
+const MARCA = "quantum:preparo-em-andamento";
+
+export interface PreparoInterrompido {
+  tipo: "planta" | "corte";
+  nome: string;
+  tamanho: number;
+  pavimento_id: number;
+}
+
+function marcar(m: PreparoInterrompido | null) {
+  try {
+    if (m) localStorage.setItem(MARCA, JSON.stringify(m));
+    else localStorage.removeItem(MARCA);
+  } catch {
+    /* navegador sem localStorage: segue sem a marca */
+  }
+}
+
+async function preparar(tipo: PreparoInterrompido["tipo"], pavimentoId: number, arquivo: File, aoProgredir?: (etapa: string) => void) {
+  marcar({ tipo, nome: arquivo.name, tamanho: arquivo.size, pavimento_id: pavimentoId });
+  try {
+    return await prepararDesenho(arquivo, arquivo.name, converterDwg, aoProgredir);
+  } finally {
+    marcar(null);
+  }
+}
+
+/** Lê e apaga a marca de um preparo que não terminou (a aba fechou ou travou no meio). */
+export function preparoInterrompido(): PreparoInterrompido | null {
+  try {
+    const v = localStorage.getItem(MARCA);
+    localStorage.removeItem(MARCA);
+    return v ? (JSON.parse(v) as PreparoInterrompido) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Acima disso a planta pode faltar memória no navegador (o corte é lido em fluxo e aguenta mais). */
 export const PLANTA_GRANDE_MB = 150;
 
@@ -348,7 +397,7 @@ export const api = {
 
   enviarArquivo: async (pavimentoId: number, arquivo: File, aoProgredir?: (etapa: string) => void) => {
     exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
-    const { dxf, nota } = await prepararDesenho(arquivo, arquivo.name, converterDwg, aoProgredir);
+    const { dxf, nota } = await preparar("planta", pavimentoId, arquivo, aoProgredir);
     const anteriores = (await banco.todos<AnaliseReg>("analises")).filter((a) => a.pavimento_id === pavimentoId);
     const reg = {
       pavimento_id: pavimentoId,
@@ -373,9 +422,13 @@ export const api = {
   /** Cortes valem para as próximas análises do pavimento (use Reprocessar nas anteriores). */
   enviarCorte: async (pavimentoId: number, arquivo: File, aoProgredir?: (etapa: string) => void) => {
     exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
-    const { dxf, nota } = await prepararDesenho(arquivo, arquivo.name, converterDwg, aoProgredir);
+    const { dxf, nota } = await preparar("corte", pavimentoId, arquivo, aoProgredir);
     const reg = { pavimento_id: pavimentoId, nome: arquivo.name, tamanho: dxf.size, criado_em: agora(), dados: dxf, conversao: nota };
-    await banco.gravar("cortes", reg);
+    try {
+      await banco.gravar("cortes", reg);
+    } catch (e) {
+      throw new Error(`Não foi possível guardar o corte no navegador (${(e as Error).message || e}). Libere espaço em disco ou remova análises antigas.`);
+    }
   },
   removerCorte: async (id: number) => banco.apagar("cortes", id),
 

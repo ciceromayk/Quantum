@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ACEITOS, api, Pavimento, PLANTA_GRANDE_MB, Projeto } from "../api";
+import { ACEITOS, api, DWG_GRANDE_MB, Pavimento, PLANTA_GRANDE_MB, preparoInterrompido, Projeto } from "../api";
 import { dataHora, STATUS } from "../formato";
 
 export default function ProjetoTela({ id }: { id: number }) {
@@ -7,6 +7,18 @@ export default function ProjetoTela({ id }: { id: number }) {
   const [erro, setErro] = useState("");
   const [nome, setNome] = useState("");
   const [repeticoes, setRepeticoes] = useState(1);
+
+  // A aba caiu no meio de uma conversão (quase sempre falta de memória com DWG grande)?
+  useEffect(() => {
+    const p = preparoInterrompido();
+    if (p)
+      setErro(
+        `A preparação ${p.tipo === "corte" ? "do corte" : "da planta"} "${p.nome}" (${mb(p.tamanho)} MB) não terminou: a página foi fechada ou o navegador ficou sem memória e reiniciou a aba. ` +
+          (/\.dwg$/i.test(p.nome)
+            ? "DWG grande pesa muito para converter no navegador. Exporte esse desenho como DXF no CAD (Salvar como > DXF 2013) e envie o DXF, que é lido em partes e aguenta até 500 MB."
+            : "Tente de novo com as outras abas fechadas."),
+      );
+  }, []);
 
   const carregar = useCallback(
     () =>
@@ -88,9 +100,10 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
     if (!arquivo) return;
     setErro("");
     setAviso(
-      arquivo.size > PLANTA_GRANDE_MB * 1048576
-        ? `Planta com ${Math.round(arquivo.size / 1048576)} MB: pode faltar memória no navegador. Se der erro, exporte só o pavimento, sem outras pranchas e xrefs.`
-        : "",
+      avisoDwg([arquivo]) ||
+        (arquivo.size > PLANTA_GRANDE_MB * 1048576
+          ? `Planta com ${Math.round(arquivo.size / 1048576)} MB: pode faltar memória no navegador. Se der erro, exporte só o pavimento, sem outras pranchas e xrefs.`
+          : ""),
     );
     setEnviando(true);
     try {
@@ -188,13 +201,24 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
   );
 }
 
+const mb = (bytes: number) => (bytes / 1048576).toFixed(1).replace(".", ",");
+
+/** Aviso antes de converter DWG grande no navegador. */
+function avisoDwg(arquivos: File[]): string {
+  const grandes = arquivos.filter((a) => /\.dwg$/i.test(a.name) && a.size > DWG_GRANDE_MB * 1048576);
+  if (!grandes.length) return "";
+  return `${grandes.map((a) => `${a.name} (${mb(a.size)} MB)`).join(", ")}: DWG grande. A conversão no navegador pode levar minutos e, se faltar memória, a aba pode recarregar sozinha. Não feche a página. Se falhar, exporte como DXF e envie o DXF.`;
+}
+
 function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void; aoErrar: (m: string) => void }) {
   const [enviando, setEnviando] = useState(false);
   const [etapa, setEtapa] = useState("");
+  const [aviso, setAviso] = useState("");
 
   async function enviar(arquivos: FileList | null) {
     if (!arquivos?.length) return;
     aoErrar("");
+    setAviso(avisoDwg(Array.from(arquivos)));
     setEnviando(true);
     try {
       for (const a of Array.from(arquivos)) {
@@ -211,6 +235,7 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
     } finally {
       setEnviando(false);
       setEtapa("");
+      setAviso("");
     }
   }
 
@@ -233,6 +258,11 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
           />
         </label>
       </div>
+      {enviando && (
+        <p className="pequeno">
+          {etapa || "Enviando…"} {aviso}
+        </p>
+      )}
       <p className="discreto pequeno">
         Alturas tiradas de cortes valem só para os ambientes que aparecem cortados e precisam de conferência. Os demais ficam como
         pendência até a altura ser informada em Parâmetros. Depois de adicionar ou remover cortes, use Reprocessar na análise.
@@ -241,7 +271,7 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
         <ul className="lista-cortes">
           {pav.cortes.map((c) => (
             <li key={c.id}>
-              {c.nome} <span className="discreto pequeno">({(c.tamanho / 1048576).toFixed(1).replace(".", ",")} MB)</span>
+              {c.nome} <span className="discreto pequeno">({mb(c.tamanho)} MB)</span>
               {c.conversao && <span className="discreto pequeno"> · {c.conversao}</span>}
               {c.tamanho > 100 * 1048576 && <span className="discreto pequeno"> · arquivo grande: a leitura leva alguns minutos</span>}
               <button
