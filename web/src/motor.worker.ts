@@ -83,7 +83,7 @@ self.onmessage = async (ev: MessageEvent<Pedido>) => {
       });
       return;
     }
-    if (/fatal error/i.test(msg)) {
+    if (/fatal error|fatally failed/i.test(msg)) {
       // O Pyodide não se recupera de um erro fatal: descarta e recarrega no próximo pedido.
       pyodide = null;
       carregando = null;
