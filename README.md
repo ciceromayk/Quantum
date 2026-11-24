@@ -95,7 +95,12 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
   nome aparece com alturas diferentes, nenhuma é usada.
 - Gera um **DXF novo** (`<arquivo>_acabamentos.dxf`), montado do zero em AutoCAD 2013 com uma
   cópia do Model. O original não é alterado. As polilinhas saem com 2,5 cm de espessura:
-  - `QTD-PISO-xx` e `QTD-TETO-xx`: polilinha **fechada**, que é a área do ambiente;
+  - `QTD-PISO-xx` e `QTD-TETO-xx`: polilinha **fechada**, que é a área do ambiente. Ambientes
+    **integrados** (contornos que se encostam, sem parede entre eles) com o **mesmo código** de
+    piso ou de forro viram **uma polilinha só**, sem a divisa, e sem a marca `-PROPOSTA`: a área
+    é contínua no desenho, embora o quantitativo continue somando ambiente por ambiente. Frestas
+    de até 7 cm entre os dois contornos (a divisa proposta é reta, a parede vizinha nem sempre)
+    são fechadas na união;
   - `QTD-PAREDE-xx`: polilinhas **abertas**, só nos trechos colados a uma parede (a divisa com o
     ambiente vizinho, por projeção ou proposta, não é parede e fica de fora).
   - Uma camada por acabamento, com o material no nome e uma cor própria, por exemplo

@@ -100,15 +100,44 @@ def test_detecta_ambientes_pela_geometria(tmp_path):
     assert "sem contorno reconhecido" in msgs and "DEPOSITO" in msgs
 
 
-def test_dxf_gerado_separa_divisa_proposta(tmp_path):
+def test_dxf_une_integrados_com_o_mesmo_piso(tmp_path):
+    """Integrados com o mesmo acabamento viram uma polilinha só, sem a divisa (nem a proposta)."""
     arq = tmp_path / "planta.dxf"
     criar_planta(arq)
     rel = analisar(arq)
     saida = tmp_path / "planta_acabamentos.dxf"
     gerar_dxf_acabamentos(arq, rel.acabamentos, saida)
     msp = ezdxf.readfile(saida).modelspace()
-    assert len(msp.query('LWPOLYLINE[layer ? "QTD-PISO-01-PROPOSTA.*"]')) == 2
-    assert len(msp.query('LWPOLYLINE[layer ? "QTD-PISO-01 .*"]')) == 3  # quarto, cozinha, serviço
+    # todos usam piso 01: quarto sozinho, cozinha+serviço juntos, varanda A+B juntas
+    assert len(msp.query('LWPOLYLINE[layer ? "QTD-PISO-01-PROPOSTA.*"]')) == 0
+    piso = msp.query('LWPOLYLINE[layer ? "QTD-PISO-01 .*"]')
+    assert len(piso) == 3
+    areas = sorted(round(abs(_area(p)), 2) for p in piso)
+    assert areas == pytest.approx([9.0, 12.0, 12.0], abs=0.05)  # varandas 8+4, quarto 12, coz 6+3
+    # a parede continua ambiente por ambiente, em trechos abertos
+    assert len(msp.query('LWPOLYLINE[layer ? "QTD-PAREDE-01 .*"]')) >= 4
+
+
+def _area(pl):
+    pts = list(pl.get_points("xy"))
+    return sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts))) / 2
+
+
+def test_integrados_com_acabamentos_diferentes_mantem_a_divisa():
+    from quantum.dxf_acabamentos import _unir_integrados
+
+    vizinhos = [
+        {"contorno": [(0, 0), (2, 0), (2, 3), (0, 3)], "codigos": {"piso": "01"}},
+        {"contorno": [(2, 0), (4, 0), (4, 3), (2, 3)], "codigos": {"piso": "01"}},
+        {"contorno": [(4, 0), (6, 0), (6, 3), (4, 3)], "codigos": {"piso": "02"}},
+    ]
+    unido = _unir_integrados(vizinhos, "piso", 0.01)
+    assert len(unido["01"]) == 1  # os dois de piso 01 viraram um só
+    assert len(unido["02"]) == 1
+    from shapely.geometry import Polygon
+
+    assert Polygon(unido["01"][0][0]).area == pytest.approx(12.0, abs=0.05)
+    assert Polygon(unido["02"][0][0]).area == pytest.approx(6.0, abs=0.05)
 
 
 def test_muitos_pedacos_de_projecao_nao_viram_divisa_proposta(tmp_path):
