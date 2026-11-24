@@ -7,7 +7,7 @@ como ponto + conteúdo. Coordenadas em metros, arredondadas a 1 mm.
 
 from __future__ import annotations
 
-from ezdxf import colors, disassemble
+from ezdxf import colors
 from ezdxf import path as ezpath
 
 from .ingestao import limpar_texto
@@ -31,6 +31,28 @@ def _cor_camada(doc, nome: str) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def _explodir(entidades, camada_pai: str | None = None, nivel: int = 0):
+    """Entidades com blocos explodidos (transformações aplicadas) e a camada efetiva.
+
+    Membro de bloco na camada 0 herda a camada do INSERT (cor e visibilidade), como no CAD.
+    Atributos anexados ao INSERT (ATTRIB) entram como texto."""
+    for e in entidades:
+        camada = e.dxf.get("layer", "0")
+        if camada == "0" and camada_pai is not None:
+            camada = camada_pai
+        if e.dxftype() == "INSERT" and nivel < 10:
+            for a in getattr(e, "attribs", []):
+                ca = a.dxf.get("layer", "0")
+                yield a, (camada if ca == "0" else ca)
+            try:
+                filhos = list(e.virtual_entities())
+            except Exception:
+                continue
+            yield from _explodir(filhos, camada, nivel + 1)
+        else:
+            yield e, camada
+
+
 def geometria(msp, fator_m: float) -> dict:
     doc = msp.doc
     f = fator_m or 1.0
@@ -42,10 +64,11 @@ def geometria(msp, fator_m: float) -> dict:
     minx = miny = float("inf")
     maxx = maxy = float("-inf")
 
-    for e in disassemble.recursive_decompose(msp):
+    for e, camada in _explodir(msp):
         t = e.dxftype()
-        camada = e.dxf.get("layer", "0")
-        if t in ("TEXT", "MTEXT"):
+        if t in ("TEXT", "MTEXT", "ATTRIB"):
+            if t == "ATTRIB" and e.dxf.get("flags", 0) & 1:  # atributo invisível
+                continue
             try:
                 txt = limpar_texto(e.plain_text() if t == "MTEXT" else e.dxf.text)
                 p = e.dxf.insert
