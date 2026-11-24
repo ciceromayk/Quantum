@@ -31,7 +31,7 @@ import ezdxf
 from ezdxf.addons.importer import IMPORT_ENTITIES, Importer
 
 try:
-    from shapely import union_all
+    from shapely import set_precision, union_all
     from shapely.geometry import Polygon
 
     TEM_SHAPELY = True
@@ -52,6 +52,7 @@ LIMITE_NOME = 100
 VERSAO = "R2013"  # AutoCAD 2013: abre em qualquer AutoCAD/LT atual e nos leitores livres
 LARGURA_M = 0.025  # espessura da polilinha, em metros (convertida para a unidade do desenho)
 FRESTA_M = 0.02  # fresta máxima fechada ao unir integrados; menor que a ponta de parede mais fina
+CANTO = {"join_style": 2, "mitre_limit": 5}  # canto em esquadro: o arredondado criaria vértices
 
 
 def _texto_seguro(t: str, limite: int = 200) -> str:
@@ -138,8 +139,14 @@ def _unir_integrados(ambientes: list[dict], tipo: str, folga: float, fator: floa
             saida[cod] = simples
             continue
         try:
-            pols = [Polygon(a["contorno"]).buffer(0) for a in grupo]
-            canto = {"join_style": 2, "mitre_limit": 5}  # canto em esquadro: o arredondado criaria vértices
+            # grade de precisão: os contornos vizinhos encostam com folga de milímetros; snap na
+            # grade faz as bordas coincidirem e a união sai limpa em qualquer versão do GEOS
+            # (sem ela, o GEOS 3.12 do Pyodide aborta com "depth mismatch")
+            grade = folga / 5
+            pols = []
+            for a in grupo:
+                q = set_precision(Polygon(a["contorno"]).buffer(0), grade)
+                pols.append(q if q.geom_type == "Polygon" and not q.is_empty else Polygon())
             pecas = []
             for i, p in enumerate(pols):
                 if p.is_empty:
@@ -167,13 +174,14 @@ def _unir_integrados(ambientes: list[dict], tipo: str, folga: float, fator: floa
                 if len(peca) == 1:
                     juntas.append(simples[peca[0]])
                     continue
-                # fecha a fresta: a divisa proposta é reta e a parede vizinha nem sempre, então
-                # entre as duas peças sobra uma cunha de poucos centímetros, que é piso também.
-                costura = FRESTA_M / fator
-                u = union_all([pols[i].buffer(costura, **canto) for i in peca]).buffer(-costura, **canto)
-                u = u.simplify(folga)
+                u = union_all([pols[i] for i in peca], grid_size=grade)
+                if u.geom_type != "Polygon":
+                    # sobrou uma fresta entre os contornos (a divisa proposta é reta, a parede
+                    # vizinha nem sempre): fecha e reabre a peça já unida, uma operação só
+                    u = u.buffer(FRESTA_M / fator, **CANTO).buffer(-FRESTA_M / fator, **CANTO)
                 partes = [g for g in getattr(u, "geoms", [u]) if g.geom_type == "Polygon" and not g.is_empty]
-                if not partes:
+                if len(partes) != 1 or not partes[0].is_valid:
+                    # não fecharam numa peça só: cada ambiente sai como estava, sem inventar área
                     juntas += [simples[i] for i in peca]
                     continue
                 # a divisa some: o contorno unido não é mais uma proposta

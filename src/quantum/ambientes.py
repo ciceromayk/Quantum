@@ -27,7 +27,7 @@ try:
     from shapely.geometry import LineString, Point, Polygon
     from shapely import STRtree
     from shapely import union_all
-    from shapely.ops import polygonize, unary_union
+    from shapely.ops import nearest_points, polygonize, unary_union
 
     TEM_SHAPELY = True
 except ImportError:  # pragma: no cover
@@ -264,29 +264,64 @@ def _retificar(p: Polygon, prof: float, vao: float = 3.0, lado_min: float = 0.25
     return q if q.geom_type == "Polygon" and not q.is_empty else p
 
 
-def _contorno(peca: Polygon, espaco: Polygon | None, tol: float, prof: float, vao: float, origem: str, erro: float) -> Contorno:
+def _junto_da_parede(a, b, borda, original, limite: float, folga: float) -> bool:
+    """O pedaço a→b corre junto a uma parede?
+
+    Perto do contorno do espaço livre (a folga é o quanto a retificação pode ter afastado a
+    linha) e com a peça original também junto à parede ali — se ela está longe, aquilo é divisa
+    com o vizinho (linha de projeção ou divisa proposta), que não é parede."""
+    for t in (0.2, 0.5, 0.8):
+        p = Point(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        if borda.distance(p) > limite:
+            return False
+        if borda.distance(nearest_points(original, p)[0]) > folga:
+            return False
+    return True
+
+
+def _contorno(peca: Polygon, espaco: Polygon | None, tol: float, prof: float, vao: float, origem: str, erro: float,
+              grade: float = 0.0) -> Contorno:
     """Contorno desenhado e medido: reto nas esquadrias, com os trechos de parede separados.
 
     `espaco` é o espaço livre inteiro de onde a peça saiu: o que coincide com o contorno dele é
     parede (ou vão fechado por esquadria); o resto é divisa com o ambiente vizinho e não conta
-    no revestimento de parede."""
+    no revestimento de parede.
+
+    A separação é feita por distância, pedaço a pedaço (passo de ~5 cm), e não por sobreposição
+    de geometrias: um `buffer` do contorno do espaço faz o GEOS 3.12 do Pyodide abortar o
+    processo inteiro ("depth mismatch"), que não é um erro que se possa tratar em Python."""
     reto = _retificar(peca, prof, vao)
+    anel = list(reto.exterior.coords)
     if espaco is None:
-        trechos = [list(reto.exterior.coords)]
+        trechos = [anel]
     else:
-        # parede é o que corre junto ao contorno do espaço, com folga para o quanto a retificação
-        # afastou a linha ao aplainar uma reentrância (no máximo `prof`); a divisa com o vizinho,
-        # que a retificação não mexe, sai pelo traçado dela mesma
-        g = reto.exterior.intersection(espaco.exterior.buffer(prof + tol))
-        divisas = peca.exterior.difference(espaco.exterior.buffer(tol * 1.5))
-        if not divisas.is_empty:
-            g = g.difference(divisas.buffer(tol * 1.5))
-        trechos = [list(l.coords) for l in getattr(g, "geoms", [g]) if l.geom_type == "LineString" and len(l.coords) > 1]
+        borda = espaco.exterior
+        passo = max(prof / 3, 1e-9)
+        trechos, atual = [], []
+        for i in range(len(anel) - 1):
+            a, b = anel[i], anel[i + 1]
+            n = max(1, math.ceil(math.dist(a, b) / passo))
+            for k in range(n):
+                p0 = (a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
+                p1 = (a[0] + (b[0] - a[0]) * (k + 1) / n, a[1] + (b[1] - a[1]) * (k + 1) / n)
+                if _junto_da_parede(p0, p1, borda, peca.exterior, prof + tol, tol * 1.5):
+                    if not atual:
+                        atual = [p0]
+                    atual.append(p1)
+                elif atual:
+                    trechos.append(atual)
+                    atual = []
+        if atual:
+            trechos.append(atual)
+        # a emenda do anel fica no meio de uma parede: junta o último trecho ao primeiro
+        if len(trechos) > 1 and trechos[0][0] == anel[0] and trechos[-1][-1] == anel[-1]:
+            trechos[0] = trechos.pop()[:-1] + trechos[0]
+        trechos = [list(LineString(t).simplify(tol / 10).coords) for t in trechos if len(t) > 1]
     perimetro = sum(LineString(t).length for t in trechos)
-    return Contorno(list(reto.exterior.coords), reto.area, origem, erro, perimetro, trechos)
+    return Contorno(anel, reto.area, origem, erro, perimetro, trechos)
 
 
-def _corte_reto(p: Polygon, ux: float, uy: float, alvo: float):
+def _corte_reto(p: Polygon, ux: float, uy: float, alvo: float, grade: float = 0.0):
     """Corta p por uma reta perpendicular a (ux, uy) deixando a fração `alvo` da área no lado de baixo."""
     minx, miny, maxx, maxy = p.bounds
     L = math.hypot(maxx - minx, maxy - miny) * 2 + 1
@@ -298,7 +333,7 @@ def _corte_reto(p: Polygon, ux: float, uy: float, alvo: float):
         return p.intersection(Polygon([
             (cx - uy * L, cy + ux * L), (cx + uy * L, cy - ux * L),
             (cx + uy * L - ux * L, cy - ux * L - uy * L), (cx - uy * L - ux * L, cy + ux * L - uy * L),
-        ]))
+        ]), grid_size=grade)
 
     for _ in range(40):
         t = (lo + hi) / 2
@@ -307,10 +342,10 @@ def _corte_reto(p: Polygon, ux: float, uy: float, alvo: float):
         else:
             hi = t
     q1 = lado((lo + hi) / 2)
-    return q1, p.difference(q1)
+    return q1, p.difference(q1, grid_size=grade)
 
 
-def _divisa_proposta(p: Polygon, a1, a2, pt1, pt2):
+def _divisa_proposta(p: Polygon, a1, a2, pt1, pt2, grade: float = 0.0):
     """Reta que reparte a área na proporção a1:a2, deixando cada rótulo do seu lado.
 
     Tenta a direção entre os rótulos e as direções das paredes (eixos x e y); fica com a divisa
@@ -324,7 +359,7 @@ def _divisa_proposta(p: Polygon, a1, a2, pt1, pt2):
     for ux, uy in direcoes:
         if ux * dx + uy * dy <= 0:  # rótulo 2 precisa estar à frente do 1 nessa direção
             continue
-        q1, q2 = _corte_reto(p, ux, uy, a1 / (a1 + a2))
+        q1, q2 = _corte_reto(p, ux, uy, a1 / (a1 + a2), grade)
         if q1.geom_type != "Polygon" or q2.geom_type != "Polygon":
             continue
         if q1.distance(pt1) > q2.distance(pt1) or q2.distance(pt2) > q1.distance(pt2):
@@ -373,7 +408,7 @@ def detectar(
 
         O casamento com o rótulo usa a peça como ela saiu da planta; a retificação vem depois,
         só no que é desenhado e medido."""
-        return _contorno(peca, espaco, tol, prof, vao, origem, e)
+        return _contorno(peca, espaco, tol, prof, vao, origem, e, grade)
     pts = [Point(*r[2]) for r in rotulos]
 
     def erro(area_desenho, a):
@@ -418,7 +453,7 @@ def detectar(
         labs = [i for i, dj in dono.items() if dj == j]
         if not labs:
             continue
-        cortes = [l.intersection(p) for l in ext if l.intersects(p)]
+        cortes = [l.intersection(p, grid_size=grade) for l in ext if l.intersects(p)]
         pecas = []
         if cortes:
             pecas = [q for q in polygonize(union_all([p.exterior] + [c for c in cortes if not c.is_empty], grid_size=grade))
@@ -475,7 +510,7 @@ def detectar(
                     usados.add(j)
                     continue
             if erro(espaco.area, a1 + a2) <= tol_area:
-                r = _divisa_proposta(espaco, a1, a2, pts[i1], pts[i2])
+                r = _divisa_proposta(espaco, a1, a2, pts[i1], pts[i2], grade)
                 if r:
                     q1, q2 = r
                     out[i1] = montar(q1, "proposta", erro(q1.area, a1), p)

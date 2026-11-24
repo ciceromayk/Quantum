@@ -1,5 +1,7 @@
 """Detecção de ambientes sem zonas: paredes duplas, porta com bloco, divisa por projeção e proposta."""
 
+import math
+
 import ezdxf
 import pytest
 
@@ -114,8 +116,14 @@ def test_dxf_une_integrados_com_o_mesmo_piso(tmp_path):
     assert len(piso) == 3
     areas = sorted(round(abs(_area(p)), 2) for p in piso)
     assert areas == pytest.approx([9.0, 12.0, 12.0], abs=0.05)  # varandas 8+4, quarto 12, coz 6+3
-    # a parede continua ambiente por ambiente, em trechos abertos
-    assert len(msp.query('LWPOLYLINE[layer ? "QTD-PAREDE-01 .*"]')) >= 4
+    # a parede continua ambiente por ambiente, em trechos abertos colados à parede
+    parede = msp.query('LWPOLYLINE[layer ? "QTD-PAREDE-.*"]')
+    assert len(parede) == 5  # um trecho por ambiente, sem as divisas
+    comprimento = sum(
+        sum(math.dist(pts[i][:2], pts[i + 1][:2]) for i in range(len(pts) - 1))
+        for pts in ([list(p.get_points("xy")) for p in parede])
+    )
+    assert comprimento == pytest.approx(42.0, abs=0.05)
 
 
 def _area(pl):
