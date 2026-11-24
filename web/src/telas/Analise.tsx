@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Acabamentos, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
+import Visualizador from "./Visualizador";
 import { dataHora, num, SEVERIDADE, STATUS } from "../formato";
 
-type Aba = "pendencias" | "quantitativos" | "parametros" | "camadas";
+type Aba = "pendencias" | "planta" | "quantitativos" | "parametros" | "camadas";
 const ORDEM: Severidade[] = ["bloqueante", "alerta", "info"];
 
 export default function AnaliseTela({ id }: { id: number }) {
@@ -97,6 +98,7 @@ export default function AnaliseTela({ id }: { id: number }) {
             {(
               [
                 ["pendencias", "Pendências"],
+                ["planta", "Planta"],
                 ["quantitativos", "Quantitativos"],
                 ["parametros", "Parâmetros"],
                 ["camadas", "Camadas"],
@@ -109,6 +111,7 @@ export default function AnaliseTela({ id }: { id: number }) {
           </nav>
 
           {aba === "pendencias" && <Pendencias lista={r.pendencias} />}
+          {aba === "planta" && <Visualizador analiseId={id} acabamentos={r.acabamentos as Acabamentos | undefined} />}
           {aba === "quantitativos" && <Quantitativos itens={r.itens} />}
           {aba === "parametros" && (
             <ParametrosTela pav={pav} analiseId={id} aoSalvar={carregar} acabamentos={r.acabamentos as Acabamentos | undefined} />

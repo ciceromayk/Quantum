@@ -214,7 +214,10 @@ def carregar(caminho: str | Path, unidade: str | None = None) -> Desenho:
 
     msp = doc.modelspace()
     entidades = [n for e in msp if (n := _normalizar(e, tolerancia)) is not None]
-    camadas = sorted({layer.dxf.name for layer in doc.layers})
+    # Só o Model é lido: pranchas (layouts/paper space) repetem o desenho em viewports,
+    # carimbos e notas, e contariam em dobro.
+    camadas = sorted({e.dxf.get("layer", "0") for e in msp})
+    ignoradas = sum(len(l) for l in doc.layouts if not l.is_modelspace)
 
     d = Desenho(
         arquivo=str(caminho),
@@ -226,5 +229,6 @@ def carregar(caminho: str | Path, unidade: str | None = None) -> Desenho:
         camadas=camadas,
         origem_unidade=origem,
     )
+    d.ignoradas_layout = ignoradas
     d.modelspace = msp  # geometria bruta, para a detecção de ambientes (não serializada)
     return d

@@ -27,6 +27,16 @@ def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None
     rel = analisar(caminho, unidade=unidade or None, parametros=parametros, cortes=cortes)
     buf = io.BytesIO()
     para_xlsx(rel, buf)
+    geo = None
+    msp = getattr(rel.desenho, "modelspace", None)
+    if msp is not None:
+        from .visualizacao import geometria
+
+        try:
+            geo = geometria(msp, rel.desenho.fator_m or 1.0)
+            geo["fator_m"] = rel.desenho.fator_m or 1.0
+        except Exception as exc:  # o visualizador é extra: não derruba a análise
+            geo = {"erro": str(exc)}
     dxf_b64 = None
     if rel.acabamentos:
         from .dxf_acabamentos import gerar_dxf_acabamentos
@@ -43,6 +53,7 @@ def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None
             "markdown": para_markdown(rel),
             "xlsx_base64": base64.b64encode(buf.getvalue()).decode("ascii"),
             "dxf_acabamentos_base64": dxf_b64,
+            "geometria": geo,
         },
         ensure_ascii=False,
     )

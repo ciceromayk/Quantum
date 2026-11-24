@@ -94,6 +94,16 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
 - Gera um **DXF novo** (`<arquivo>_acabamentos.dxf`) com polilinhas fechadas nas camadas
   `QTD-PISO-xx`, `QTD-PAREDE-xx` e `QTD-TETO-xx`. O original não é alterado.
 
+## Só o Model e visualizador
+
+- O Quantum lê **só o Model** do arquivo. Pranchas (layouts/paper space) repetem o desenho em
+  viewports e trazem carimbo e notas, que contariam em dobro; elas são ignoradas e a análise
+  avisa quantas entidades ficaram de fora.
+- A aba **Planta** da análise mostra o desenho do Model no navegador: camadas com as cores do
+  arquivo (liga/desliga), textos, zoom e arrasto (mouse ou toque) e os contornos de ambiente
+  detectados por cor (verde: detectado; azul: separado por projeção; laranja: divisa proposta).
+  Clicar num ambiente mostra rótulo, área do contorno, perímetro de parede e códigos de acabamento.
+
 ## Arquivos exportados de BIM (ArchiCAD, Revit)
 
 - Nomes de bloco por instância (`Vaso Sanitário 26[3]_1`) são agrupados pelo tipo (`Vaso Sanitário`).
