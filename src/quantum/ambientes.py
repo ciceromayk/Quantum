@@ -121,6 +121,14 @@ def _coletar(msp, cfg, tol: float) -> tuple[list, list, list]:
                     linhas.append(g)
             elif camada in div and (g := _linha(e)) is not None:
                 divisao.append(g)
+    if raios and linhas:
+        arvore = STRtree(linhas)
+        for raio in raios:
+            ponta = Point(raio.coords[-1])
+            # a ponta solta da folha aberta não encosta em parede nenhuma; a do raio que
+            # atravessa o vão encosta no outro lado, e só esse fecha o vão
+            if any(linhas[k].distance(ponta) <= tol * 3 for k in arvore.query(ponta.buffer(tol * 3))):
+                linhas.append(raio)
     return linhas, vaos, divisao
 
 

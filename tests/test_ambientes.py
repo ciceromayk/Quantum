@@ -230,3 +230,31 @@ def test_canto_sai_limpo_mesmo_com_alisar(tmp_path):
     # chanfro de verdade (0,5 m) não é degrau e continua no contorno
     chanfro = Polygon([(0, 0), (4, 0), (4, 2.5), (3.5, 3), (0, 3)])
     assert len(_retificar(chanfro, 0.15).exterior.coords) == 6
+
+
+def test_vao_sem_linha_de_parede_fecha_pelo_arco(tmp_path):
+    """Bloco de porta sem linha de parede: o raio que atravessa o vão fecha, a folha não."""
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    _quadro(msp)
+    # SALA 4 x 3 com um vão de 0,80 m na parede de baixo (face interna e externa abertas)
+    for y in (0.0, -0.15):
+        msp.add_line((-0.15 if y else 0, y), (1.0, y), dxfattribs={"layer": "ALVENARIA"})
+        msp.add_line((1.8, y), (4.15 if y else 4, y), dxfattribs={"layer": "ALVENARIA"})
+    for x0, y0, x1, y1 in ((4, 0, 4, 3), (4, 3, 0, 3), (0, 3, 0, 0)):
+        msp.add_line((x0, y0), (x1, y1), dxfattribs={"layer": "ALVENARIA"})
+    for a, b in (((4.15, -0.15), (4.15, 3.15)), ((4.15, 3.15), (-0.15, 3.15)), ((-0.15, 3.15), (-0.15, -0.15))):
+        msp.add_line(a, b, dxfattribs={"layer": "ALVENARIA"})
+    # bloco só com a porta: arco de abertura, sem nenhuma linha em camada de parede
+    porta = doc.blocks.new(name="SO_PORTA")
+    porta.add_arc((1.0, 0), 0.8, 270, 0, dxfattribs={"layer": "ESQ"})  # folha para fora
+    msp.add_blockref("SO_PORTA", (0, 0), dxfattribs={"layer": "ESQ"})
+    _rotulo(doc, msp, "SALA", 12.0, 2.0, 1.5)
+    arq = tmp_path / "vao.dxf"
+    doc.saveas(arq)
+
+    a = _amb(analisar(arq))["SALA"]
+    assert a["contorno_origem"] == "paredes"
+    assert a["area_contorno_m2"] == pytest.approx(12.0, rel=0.02)
+    assert min(y for _, y in a["contorno"]) >= -0.16  # a folha aberta não entra no contorno
