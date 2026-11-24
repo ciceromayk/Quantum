@@ -2,7 +2,7 @@
 // Mesma interface que a API do servidor usava; os dados ficam no IndexedDB e o
 // processamento roda no Web Worker com Pyodide (motor.worker.ts).
 
-import { banco } from "./banco";
+import { banco, type Loja } from "./banco";
 import { prepararDesenho, type ConverterDwg } from "./conversao";
 
 export type Severidade = "bloqueante" | "alerta" | "info";
@@ -348,6 +348,26 @@ function baixar(nome: string, conteudo: Blob) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// --- exclusão ------------------------------------------------------------------------------
+
+const ocupada = (a: AnaliseReg) => a.status === "na_fila" || a.status === "processando";
+
+const chavesDaAnalise = (id: number): [Loja, number][] => [
+  ["arquivos", id],
+  ["relatorios", id],
+  ["analises", id],
+];
+
+/** Tudo o que pertence aos pavimentos (revisões e cortes). Recusa se algo ainda processa. */
+async function chavesDosPavimentos(ids: number[]): Promise<[Loja, number][]> {
+  const pavs = new Set(ids);
+  const analises = (await banco.todos<AnaliseReg>("analises")).filter((a) => pavs.has(a.pavimento_id));
+  const presa = analises.find(ocupada);
+  if (presa) throw new Error(`R${presa.revisao} (${presa.arquivo_nome}) ainda está em processamento. Aguarde terminar para excluir.`);
+  const cortes = (await banco.todos<CorteReg>("cortes")).filter((c) => pavs.has(c.pavimento_id));
+  return [...analises.flatMap((a) => chavesDaAnalise(a.id)), ...cortes.map((c) => ["cortes", c.id] as [Loja, number])];
+}
+
 function nomeBase(a: AnaliseReg) {
   return `${a.arquivo_nome.replace(/\.[^.]+$/, "")}_R${a.revisao}`;
 }
@@ -431,6 +451,36 @@ export const api = {
     }
   },
   removerCorte: async (id: number) => banco.apagar("cortes", id),
+
+  /** Apaga uma revisão da planta: o DXF guardado, a análise e os relatórios gerados. */
+  excluirAnalise: async (id: number) => {
+    const a = exigir(await banco.obter<AnaliseReg>("analises", id), "Análise");
+    if (ocupada(a)) throw new Error(`R${a.revisao} ainda está em processamento. Aguarde terminar para excluir.`);
+    await banco.apagarVarios(chavesDaAnalise(id));
+  },
+
+  /** Apaga o pavimento com todas as revisões, análises e cortes. */
+  excluirPavimento: async (id: number) => {
+    exigir(await banco.obter<PavimentoReg>("pavimentos", id), "Pavimento");
+    await banco.apagarVarios([...(await chavesDosPavimentos([id])), ["pavimentos", id]]);
+  },
+
+  /** Apaga o empreendimento inteiro: pavimentos, arquivos, cortes, análises e relatórios. */
+  excluirProjeto: async (id: number) => {
+    exigir(await banco.obter<ProjetoReg>("projetos", id), "Projeto");
+    const pavs = (await banco.todos<PavimentoReg>("pavimentos")).filter((p) => p.projeto_id === id).map((p) => p.id);
+    await banco.apagarVarios([...(await chavesDosPavimentos(pavs)), ...pavs.map((p) => ["pavimentos", p] as [Loja, number]), ["projetos", id]]);
+  },
+
+  /** Espaço que o Quantum ocupa neste navegador (null se o navegador não informa). */
+  espacoUsado: async (): Promise<{ usado: number; total: number } | null> => {
+    try {
+      const e = await navigator.storage?.estimate?.();
+      return e && e.usage !== undefined ? { usado: e.usage, total: e.quota ?? 0 } : null;
+    } catch {
+      return null;
+    }
+  },
 
   /** Geometria para o visualizador; null se a análise é de antes do visualizador (use Reprocessar). */
   geometria: async (id: number): Promise<Geometria | null> => {

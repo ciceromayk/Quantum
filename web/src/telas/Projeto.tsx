@@ -1,6 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ACEITOS, api, DWG_GRANDE_MB, Pavimento, PLANTA_GRANDE_MB, preparoInterrompido, Projeto } from "../api";
 import { dataHora, STATUS } from "../formato";
+import Excluir from "../Excluir";
+import { perguntaProjeto } from "./Projetos";
 
 export default function ProjetoTela({ id }: { id: number }) {
   const [projeto, setProjeto] = useState<Projeto | null>(null);
@@ -60,10 +62,26 @@ export default function ProjetoTela({ id }: { id: number }) {
       <p className="trilha">
         <a href="#/">Empreendimentos</a> / {projeto.nome}
       </p>
-      <h1>{projeto.nome}</h1>
-      <p className="discreto">
-        {[projeto.endereco, projeto.data_base && `Data-base ${projeto.data_base}`].filter(Boolean).join(" · ") || "Sem endereço e data-base"}
-      </p>
+      <div className="cartao-topo">
+        <div>
+          <h1>{projeto.nome}</h1>
+          <p className="discreto">
+            {[projeto.endereco, projeto.data_base && `Data-base ${projeto.data_base}`].filter(Boolean).join(" · ") ||
+              "Sem endereço e data-base"}
+          </p>
+        </div>
+        <span className="acoes-linha">
+          <button className="secundario-btn" onClick={() => api.exportarProjeto(projeto.id).catch((e) => setErro(e.message))}>
+            Exportar
+          </button>
+          <Excluir
+            rotulo="Excluir empreendimento"
+            pergunta={perguntaProjeto(projeto)}
+            aoConfirmar={() => api.excluirProjeto(projeto.id).then(() => (window.location.hash = "#/"))}
+            aoErrar={setErro}
+          />
+        </span>
+      </div>
       {erro && <p className="erro">{erro}</p>}
 
       <section className="cartao">
@@ -132,25 +150,35 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
             {pav.unidade && ` · unidade ${pav.unidade}`}
           </p>
         </div>
-        <label className={`botao ${enviando ? "desativado" : ""}`}>
-          {enviando ? etapa || "Enviando…" : "Enviar DXF / DWG"}
-          <input
-            type="file"
-            accept={ACEITOS}
-            hidden
-            disabled={enviando}
-            onChange={(e) => {
-              enviar(e.target.files?.[0]);
-              e.target.value = "";
-            }}
+        <span className="acoes-linha">
+          <Excluir
+            rotulo="Excluir pavimento"
+            pergunta={`Excluir o pavimento "${pav.nome}" com ${pav.analises.length} arquivo${pav.analises.length === 1 ? "" : "s"} de planta, ${pav.cortes.length} corte${pav.cortes.length === 1 ? "" : "s"} e as análises? Não dá para desfazer.`}
+            aoConfirmar={() => api.excluirPavimento(pav.id).then(aoMudar)}
+            aoErrar={setErro}
           />
-        </label>
+          <label className={`botao ${enviando ? "desativado" : ""}`}>
+            {enviando ? etapa || "Enviando…" : "Enviar DXF / DWG"}
+            <input
+              type="file"
+              accept={ACEITOS}
+              hidden
+              disabled={enviando}
+              onChange={(e) => {
+                enviar(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </span>
       </div>
       {erro && <p className="erro">{erro}</p>}
       {aviso && <p className="discreto pequeno">{aviso}</p>}
       <Cortes pav={pav} aoMudar={aoMudar} aoErrar={setErro} />
       {analises.length === 0 ? (
-        <p className="discreto">Nenhum arquivo enviado. Envie o pavimento em DXF, DWG ou .zip com um deles (até 500 MB). Só o espaço do modelo (Model) é lido.</p>
+        <p className="discreto">
+          Nenhum arquivo enviado. Envie o pavimento em DXF, DWG ou .zip com um deles (até 500 MB). Só o espaço do modelo (Model) é lido.
+        </p>
       ) : (
         <table className="tabela">
           <thead>
@@ -169,28 +197,35 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
                 <td>{a.arquivo_nome}</td>
                 <td>
                   <span className={`status status-${a.status}`}>{STATUS[a.status]}</span>
-                  {a.etapa && (a.status === "na_fila" || a.status === "processando") && (
-                    <div className="discreto pequeno">{a.etapa}</div>
-                  )}
+                  {a.etapa && (a.status === "na_fila" || a.status === "processando") && <div className="discreto pequeno">{a.etapa}</div>}
                   {a.conversao && <div className="discreto pequeno">{a.conversao}</div>}
                   {a.erro && <div className="erro pequeno">{a.erro}</div>}
                 </td>
                 <td>{dataHora(a.criado_em)}</td>
                 <td className="num">
-                  {a.status === "concluida" && <a href={`#/analises/${a.id}`}>Abrir análise</a>}
-                  {a.status === "erro" && (
-                    <button
-                      className="secundario-btn"
-                      onClick={() =>
-                        api
-                          .reprocessar(a.id)
-                          .then(aoMudar)
-                          .catch((e) => setErro((e as Error).message))
-                      }
-                    >
-                      Reprocessar
-                    </button>
-                  )}
+                  <span className="acoes-linha">
+                    {a.status === "concluida" && <a href={`#/analises/${a.id}`}>Abrir análise</a>}
+                    {a.status === "erro" && (
+                      <button
+                        className="secundario-btn"
+                        onClick={() =>
+                          api
+                            .reprocessar(a.id)
+                            .then(aoMudar)
+                            .catch((e) => setErro((e as Error).message))
+                        }
+                      >
+                        Reprocessar
+                      </button>
+                    )}
+                    {a.status !== "na_fila" && a.status !== "processando" && (
+                      <Excluir
+                        pergunta={`Excluir R${a.revisao} (${a.arquivo_nome}) e a análise dela? Não dá para desfazer.`}
+                        aoConfirmar={() => api.excluirAnalise(a.id).then(aoMudar)}
+                        aoErrar={setErro}
+                      />
+                    )}
+                  </span>
                 </td>
               </tr>
             ))}
@@ -264,8 +299,8 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
         </p>
       )}
       <p className="discreto pequeno">
-        Alturas tiradas de cortes valem só para os ambientes que aparecem cortados e precisam de conferência. Os demais ficam como
-        pendência até a altura ser informada em Parâmetros. Depois de adicionar ou remover cortes, use Reprocessar na análise.
+        Alturas tiradas de cortes valem só para os ambientes que aparecem cortados e precisam de conferência. Os demais ficam como pendência
+        até a altura ser informada em Parâmetros. Depois de adicionar ou remover cortes, use Reprocessar na análise.
       </p>
       {pav.cortes.length > 0 && (
         <ul className="lista-cortes">
@@ -274,17 +309,11 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
               {c.nome} <span className="discreto pequeno">({mb(c.tamanho)} MB)</span>
               {c.conversao && <span className="discreto pequeno"> · {c.conversao}</span>}
               {c.tamanho > 100 * 1048576 && <span className="discreto pequeno"> · arquivo grande: a leitura leva alguns minutos</span>}
-              <button
-                className="secundario-btn"
-                onClick={() =>
-                  api
-                    .removerCorte(c.id)
-                    .then(aoMudar)
-                    .catch((e) => aoErrar((e as Error).message))
-                }
-              >
-                Remover
-              </button>
+              <Excluir
+                pergunta={`Excluir o corte ${c.nome}? Use Reprocessar nas análises depois.`}
+                aoConfirmar={() => api.removerCorte(c.id).then(aoMudar)}
+                aoErrar={aoErrar}
+              />
             </li>
           ))}
         </ul>

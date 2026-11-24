@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, Projeto } from "../api";
 import { dataHora } from "../formato";
+import Excluir from "../Excluir";
 
 export default function Projetos() {
   const [lista, setLista] = useState<Projeto[] | null>(null);
@@ -9,7 +10,15 @@ export default function Projetos() {
   const [endereco, setEndereco] = useState("");
   const [dataBase, setDataBase] = useState("");
 
-  const carregar = () => api.projetos().then(setLista).catch((e) => setErro(e.message));
+  const [espaco, setEspaco] = useState<{ usado: number; total: number } | null>(null);
+
+  const carregar = () => {
+    api.espacoUsado().then(setEspaco);
+    return api
+      .projetos()
+      .then(setLista)
+      .catch((e) => setErro(e.message));
+  };
   useEffect(() => {
     carregar();
   }, []);
@@ -98,21 +107,50 @@ export default function Projetos() {
                 <td className="num">{p.pavimentos.length}</td>
                 <td>{dataHora(p.criado_em)}</td>
                 <td className="num">
-                  <button
-                    className="secundario-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      api.exportarProjeto(p.id).catch((err) => setErro(err.message));
-                    }}
-                  >
-                    Exportar
-                  </button>
+                  <span className="acoes-linha">
+                    <button
+                      className="secundario-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        api.exportarProjeto(p.id).catch((err) => setErro(err.message));
+                      }}
+                    >
+                      Exportar
+                    </button>
+                    <Excluir pergunta={perguntaProjeto(p)} aoConfirmar={() => api.excluirProjeto(p.id).then(carregar)} aoErrar={setErro} />
+                  </span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+      {espaco && (
+        <p className="discreto pequeno">
+          Espaço usado pelo Quantum neste navegador: {tamanho(espaco.usado)}
+          {espaco.total > 0 && ` de ${tamanho(espaco.total)} disponíveis`}. Excluir revisões antigas, cortes ou empreendimentos libera esse
+          espaço.
+        </p>
+      )}
     </>
   );
+}
+
+export function tamanho(bytes: number) {
+  if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1).replace(".", ",")} GB`;
+  return `${Math.max(0, bytes / 1048576)
+    .toFixed(1)
+    .replace(".", ",")} MB`;
+}
+
+/** Texto da confirmação: diz exatamente o que vai sumir. */
+export function perguntaProjeto(p: Projeto) {
+  const revisoes = p.pavimentos.reduce((n, x) => n + x.analises.length, 0);
+  const cortes = p.pavimentos.reduce((n, x) => n + x.cortes.length, 0);
+  const partes = [
+    `${p.pavimentos.length} pavimento${p.pavimentos.length === 1 ? "" : "s"}`,
+    `${revisoes} arquivo${revisoes === 1 ? "" : "s"} de planta`,
+    `${cortes} corte${cortes === 1 ? "" : "s"}`,
+  ];
+  return `Excluir "${p.nome}" com ${partes.join(", ")} e todas as análises? Não dá para desfazer. Use Exportar antes se quiser guardar os resultados.`;
 }
