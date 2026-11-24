@@ -7,7 +7,10 @@ pelo LibreDWG, que o AutoCAD recusa abrir). Entidades que o Importer não sabe c
 fora (o contorno e a planta de referência continuam lá).
 
 Para cada ambiente com contorno e etiqueta:
-- piso e teto (QTD-PISO-<código>, QTD-TETO-<código>): uma LWPOLYLINE fechada, que é a área;
+- piso e teto (QTD-PISO-<código>, QTD-TETO-<código>): uma LWPOLYLINE fechada, que é a área.
+  Ambientes integrados (contornos que se encostam, sem parede entre eles) com o mesmo código
+  viram uma polilinha só, sem a divisa: a área é contínua, embora o quantitativo continue
+  somando ambiente por ambiente;
 - parede (QTD-PAREDE-<código>): uma LWPOLYLINE aberta em cada trecho colado a uma parede. As
   divisas com o ambiente vizinho (linha de projeção ou divisa proposta) não são parede e ficam
   de fora, então a soma dos comprimentos é o perímetro que entra no revestimento.
@@ -27,6 +30,14 @@ from pathlib import Path
 import ezdxf
 from ezdxf.addons.importer import IMPORT_ENTITIES, Importer
 
+try:
+    from shapely import union_all
+    from shapely.geometry import Polygon
+
+    TEM_SHAPELY = True
+except ImportError:  # pragma: no cover
+    TEM_SHAPELY = False
+
 from .ingestao import abrir_documento
 
 # Uma cor por acabamento, na faixa do tipo (ACI): piso em verde, parede em vermelho, teto em azul.
@@ -40,6 +51,7 @@ PROIBIDOS = {ord(c): None for c in '<>"?*|=`'} | {ord(c): "." for c in ",;:"} | 
 LIMITE_NOME = 100
 VERSAO = "R2013"  # AutoCAD 2013: abre em qualquer AutoCAD/LT atual e nos leitores livres
 LARGURA_M = 0.025  # espessura da polilinha, em metros (convertida para a unidade do desenho)
+FRESTA_M = 0.07  # fresta máxima fechada ao unir integrados (metade de uma parede de 15 cm)
 
 
 def _texto_seguro(t: str, limite: int = 200) -> str:
@@ -108,6 +120,70 @@ def _copiar_mascara(w, doc, msp) -> None:
     msp.add_wipeout(pts, dxfattribs={"layer": camada})
 
 
+def _unir_integrados(ambientes: list[dict], tipo: str, folga: float, fator: float = 1.0) -> dict[str, list[tuple[list, bool]]]:
+    """Peças a desenhar por código: contornos encostados com o mesmo acabamento viram uma só.
+
+    Dois ambientes só se encostam quando não há parede entre eles (são integrados, separados
+    por linha de projeção ou por divisa proposta); com o mesmo piso ou forro, a área é uma só.
+    Devolve {código: [(anel, veio de divisa proposta)]}."""
+    por_codigo: dict[str, list[dict]] = {}
+    for a in ambientes:
+        cod = a["codigos"].get(tipo)
+        if cod:
+            por_codigo.setdefault(cod, []).append(a)
+    saida: dict[str, list[tuple[list, bool]]] = {}
+    for cod, grupo in por_codigo.items():
+        simples = [(a["contorno"], a.get("contorno_origem") == "proposta") for a in grupo]
+        if not TEM_SHAPELY or len(grupo) < 2:
+            saida[cod] = simples
+            continue
+        try:
+            pols = [Polygon(a["contorno"]).buffer(0) for a in grupo]
+            canto = {"join_style": 2, "mitre_limit": 5}  # canto em esquadro: o arredondado criaria vértices
+            pecas = []
+            for i, p in enumerate(pols):
+                if p.is_empty:
+                    continue
+                for peca in pecas:
+                    if any(pols[k].distance(p) <= folga for k in peca):
+                        peca.append(i)
+                        break
+                else:
+                    pecas.append([i])
+            # junta peças que passaram a se tocar pelo caminho (A-B e B-C viraram A-B-C)
+            mudou = True
+            while mudou:
+                mudou = False
+                for x in range(len(pecas)):
+                    for y in range(x + 1, len(pecas)):
+                        if any(pols[i].distance(pols[j]) <= folga for i in pecas[x] for j in pecas[y]):
+                            pecas[x] += pecas.pop(y)
+                            mudou = True
+                            break
+                    if mudou:
+                        break
+            juntas: list[tuple[list, bool]] = []
+            for peca in pecas:
+                if len(peca) == 1:
+                    juntas.append(simples[peca[0]])
+                    continue
+                # fecha a fresta: a divisa proposta é reta e a parede vizinha nem sempre, então
+                # entre as duas peças sobra uma cunha de poucos centímetros, que é piso também.
+                costura = FRESTA_M / fator
+                u = union_all([pols[i].buffer(costura, **canto) for i in peca]).buffer(-costura, **canto)
+                u = u.simplify(folga)
+                partes = [g for g in getattr(u, "geoms", [u]) if g.geom_type == "Polygon" and not g.is_empty]
+                if not partes:
+                    juntas += [simples[i] for i in peca]
+                    continue
+                # a divisa some: o contorno unido não é mais uma proposta
+                juntas += [(list(g.exterior.coords), False) for g in partes]
+            saida[cod] = juntas
+        except Exception:
+            saida[cod] = simples
+    return saida
+
+
 def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Path) -> int:
     """Devolve o número de polilinhas criadas. Não grava nada se nenhum ambiente tem contorno."""
     ambientes = [a for a in acabamentos.get("ambientes", []) if a.get("contorno") and a.get("codigos")]
@@ -122,28 +198,38 @@ def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Pa
     largura = LARGURA_M / fator_m
     codigos = {t: sorted({a["codigos"][t] for a in ambientes if t in a["codigos"]}) for t in CORES}
     n = 0
+
+    def camada_de(tipo: str, cod: str, proposta: bool) -> dict:
+        material = catalogo.get(tipo, {}).get(cod, "")
+        nome = _nome_camada(tipo, cod, material, proposta)
+        if nome not in doc.layers:
+            camada = doc.layers.add(nome, color=_cor(tipo, cod, codigos))
+            camada.description = _texto_seguro(material)
+        return {"layer": nome, "const_width": largura}
+
+    # parede: um trecho por pedaço colado à parede, ambiente por ambiente
     for a in ambientes:
-        for tipo, cod in sorted(a["codigos"].items()):
-            if tipo not in CORES:
-                continue
-            material = catalogo.get(tipo, {}).get(cod, "")
-            nome = _nome_camada(tipo, cod, material, a.get("contorno_origem") == "proposta")
-            if nome not in doc.layers:
-                camada = doc.layers.add(nome, color=_cor(tipo, cod, codigos))
-                camada.description = _texto_seguro(material)
-            atrib = {"layer": nome, "const_width": largura}
-            if tipo == "parede":
-                # só os trechos colados à parede; sem trecho identificado, o contorno inteiro
-                trechos = [t for t in (a.get("trechos_parede") or []) if len(t) >= 2] or [a["contorno"]]
-                for t in trechos:
-                    msp.add_lwpolyline([tuple(p) for p in t], close=False, dxfattribs=atrib)
-                    n += 1
-                continue
-            pts = [tuple(p) for p in a["contorno"]]
-            if len(pts) > 1 and pts[0] == pts[-1]:
-                pts = pts[:-1]
-            msp.add_lwpolyline(pts, close=True, dxfattribs=atrib)
+        cod = a["codigos"].get("parede")
+        if not cod:
+            continue
+        atrib = camada_de("parede", cod, a.get("contorno_origem") == "proposta")
+        trechos = [t for t in (a.get("trechos_parede") or []) if len(t) >= 2] or [a["contorno"]]
+        for t in trechos:
+            msp.add_lwpolyline([tuple(p) for p in t], close=False, dxfattribs=atrib)
             n += 1
+
+    # piso e teto: área fechada, com os integrados de mesmo acabamento unidos
+    folga = (LARGURA_M / 2) / fator_m
+    for tipo in ("piso", "teto"):
+        for cod, pecas in sorted(_unir_integrados(ambientes, tipo, folga, fator_m).items()):
+            for anel, proposta in pecas:
+                pts = [tuple(p) for p in anel]
+                if len(pts) > 1 and pts[0] == pts[-1]:
+                    pts = pts[:-1]
+                if len(pts) < 3:
+                    continue
+                msp.add_lwpolyline(pts, close=True, dxfattribs=camada_de(tipo, cod, proposta))
+                n += 1
     doc.audit()
     doc.saveas(saida)
     return n
