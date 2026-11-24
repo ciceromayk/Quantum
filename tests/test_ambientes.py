@@ -107,8 +107,8 @@ def test_dxf_gerado_separa_divisa_proposta(tmp_path):
     saida = tmp_path / "planta_acabamentos.dxf"
     gerar_dxf_acabamentos(arq, rel.acabamentos, saida)
     msp = ezdxf.readfile(saida).modelspace()
-    assert len(msp.query('LWPOLYLINE[layer=="QTD-PISO-01-PROPOSTA"]')) == 2
-    assert len(msp.query('LWPOLYLINE[layer=="QTD-PISO-01"]')) == 3  # quarto, cozinha, serviço
+    assert len(msp.query('LWPOLYLINE[layer ? "QTD-PISO-01-PROPOSTA.*"]')) == 2
+    assert len(msp.query('LWPOLYLINE[layer ? "QTD-PISO-01 .*"]')) == 3  # quarto, cozinha, serviço
 
 
 def test_muitos_pedacos_de_projecao_nao_viram_divisa_proposta(tmp_path):
@@ -161,7 +161,9 @@ def test_dxf_gerado_e_montado_do_zero_e_abre_limpo(tmp_path):
     assert len(nmsp.query("WIPEOUT")) == 1
     assert "APP_ESTRANHO" not in novo.appids
     assert "PRANCHA" not in novo.layouts.names()
-    assert novo.layers.get("QTD-PISO-01").description == "PISO UM linha dois com tab"
+    camada = next(c for c in novo.layers if c.dxf.name.startswith("QTD-PISO-01 "))
+    assert camada.dxf.name == "QTD-PISO-01 PISO UM linha dois com tab"
+    assert camada.description == "PISO UM linha dois com tab"
     assert novo.header["$INSUNITS"] == 6
 
 
@@ -189,8 +191,8 @@ def test_polilinhas_de_parede_ficam_coladas_na_parede_e_com_espessura(tmp_path):
     gerar_dxf_acabamentos(arq, rel.acabamentos, saida)
     msp = ezdxf.readfile(saida).modelspace()
 
-    piso = msp.query('LWPOLYLINE[layer=="QTD-PISO-01"]')
-    parede = msp.query('LWPOLYLINE[layer=="QTD-PAREDE-01"]')
+    piso = msp.query('LWPOLYLINE[layer ? "QTD-PISO-01 .*"]')
+    parede = msp.query('LWPOLYLINE[layer ? "QTD-PAREDE-01 .*"]')
     assert piso and parede
     assert all(p.closed for p in piso), "piso e teto medem área: polilinha fechada"
     assert all(not p.closed for p in parede), "parede segue só os trechos com parede: polilinha aberta"
@@ -201,3 +203,30 @@ def test_polilinhas_de_parede_ficam_coladas_na_parede_e_com_espessura(tmp_path):
     cozinha = amb["COZINHA"]
     assert cozinha["perimetro_m"] == pytest.approx(7.0, rel=0.02)  # 2 + 3 + 2, sem a divisa de 3 m
     assert sum(len(t) for t in cozinha["trechos_parede"]) > 0
+
+
+def test_porta_nao_entra_no_contorno(tmp_path):
+    """A folha e o arco de abertura são desenho da porta, não parede: o contorno fecha o vão reto."""
+    arq = tmp_path / "planta.dxf"
+    criar_planta(arq)
+    a = _amb(analisar(arq))["QUARTO"]
+    pts = a["contorno"]
+    # a folha abre para fora (y de -0,15 a -0,95): nenhum ponto do contorno passa da parede
+    assert min(y for _, y in pts) >= -0.16, pts
+    assert a["area_contorno_m2"] == pytest.approx(12.0, rel=0.02)
+
+
+def test_canto_sai_limpo_mesmo_com_alisar(tmp_path):
+    """Degraus rasos no canto (alisar de porta, requadro) viram um canto em esquadro."""
+    from shapely.geometry import Polygon
+
+    from quantum.ambientes import _retificar
+
+    # retângulo 4 x 3 com um degrau de 4 cm no canto superior direito (alisar)
+    com_degrau = Polygon([(0, 0), (4, 0), (4, 2.96), (3.96, 2.96), (3.96, 3), (0, 3)])
+    reto = _retificar(com_degrau, 0.15)
+    assert len(reto.exterior.coords) == 5
+    assert reto.area == pytest.approx(12.0, abs=0.01)
+    # chanfro de verdade (0,5 m) não é degrau e continua no contorno
+    chanfro = Polygon([(0, 0), (4, 0), (4, 2.5), (3.5, 3), (0, 3)])
+    assert len(_retificar(chanfro, 0.15).exterior.coords) == 6

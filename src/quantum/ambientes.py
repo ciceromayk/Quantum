@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 try:
     from shapely.geometry import LineString, Point, Polygon
+    from shapely import STRtree
     from shapely import union_all
     from shapely.ops import polygonize, unary_union
 
@@ -79,9 +80,9 @@ def _estender(l: LineString, d: float) -> LineString:
     return LineString([ext(c[0], c[1])] + c[1:-1] + [ext(c[-1], c[-2])])
 
 
-def _coletar(msp, cfg) -> tuple[list, list, list]:
+def _coletar(msp, cfg, tol: float) -> tuple[list, list, list]:
     paredes, esq, div = set(cfg["camadas_parede"]), set(cfg["camadas_esquadria"]), set(cfg["camadas_divisao"])
-    linhas, vaos, divisao = [], [], []
+    linhas, vaos, divisao, raios = [], [], [], []
     for e in msp:
         t = e.dxftype()
         camada = e.dxf.get("layer", "0")
@@ -91,17 +92,21 @@ def _coletar(msp, cfg) -> tuple[list, list, list]:
             except Exception:
                 continue
             if camada in esq:
+                # o vão é fechado pelo retângulo das linhas de parede do bloco (as faces e os
+                # batentes): a porta em si (folha, arco de abertura, alisares) não entra no desenho
                 g = [_linha(v) for v in vs if v.dxf.get("layer") in paredes and v.dxftype() != "WIPEOUT"]
                 g = [x for x in g if x is not None]
-                if g:
-                    r = unary_union(g).minimum_rotated_rectangle
-                    if r.area > 0:
-                        vaos.append(r)
+                r = unary_union(g).minimum_rotated_rectangle if g else None
+                if r is not None and r.area > 0:
+                    vaos.append(r)
+                # o vão também pode ser fechado por um raio do arco de abertura, mas só o que
+                # atravessa o vão: o outro é a folha aberta, dentro do ambiente. A escolha é
+                # feita no fim, com todas as paredes na mão.
                 for v in vs:
                     if v.dxftype() == "ARC":
                         c = (v.dxf.center.x, v.dxf.center.y)
-                        for p in (v.start_point, v.end_point):
-                            linhas.append(LineString([c, (p.x, p.y)]))
+                        for q in (v.start_point, v.end_point):
+                            raios.append(LineString([c, (q.x, q.y)]))
             else:
                 for v in vs:
                     cv = v.dxf.get("layer")
@@ -120,16 +125,25 @@ def _coletar(msp, cfg) -> tuple[list, list, list]:
 
 
 def _reto_no_anel(pts: list[tuple[float, float]], prof: float, vao: float, lado_min: float) -> list[tuple[float, float]]:
-    """Anel sem as reentrâncias das esquadrias, seguindo a face da parede.
+    """Anel sem as reentrâncias das esquadrias e com os cantos limpos.
 
-    Só apaga um desvio quando ele volta para a mesma reta: o trecho começa e termina em lados
-    longos (face de parede), os dois são paralelos e o que está no meio não se afasta mais que
-    `prof` dessa reta, num vão de até `vao`. Um canto de verdade muda de direção e fica."""
+    Os lados longos são as faces de parede. Entre dois deles, o que estiver no meio (batente,
+    requadro, alisar, degrau da tolerância) é apagado quando não se afasta mais que `prof` das
+    duas faces, num vão de até `vao`:
+    - faces paralelas: a linha segue reta de uma à outra;
+    - faces em ângulo: o canto vai para o encontro das duas faces, em esquadro.
+    Um canto de verdade ou um recorte fundo se afasta mais que `prof` e continua no contorno."""
     n = len(pts)
     longos = [k for k in range(n) if math.dist(pts[k], pts[(k + 1) % n]) >= lado_min]
     if len(longos) < 3:
         return pts
-    pts = pts[longos[0]:] + pts[: longos[0]]  # começa numa face de parede
+    # começa no meio do lado mais longo (uma parede inteira): assim a emenda do anel cai numa
+    # reta, e todo canto fica no meio do caminho, onde é limpo
+    maior = max(longos, key=lambda k: math.dist(pts[k], pts[(k + 1) % n]))
+    (x0, y0), (x1, y1) = pts[maior], pts[(maior + 1) % n]
+    meio_lado = ((x0 + x1) / 2, (y0 + y1) / 2)
+    pts = [meio_lado] + pts[(maior + 1) % n:] + pts[: (maior + 1) % n]
+    n = len(pts)
     longo = [math.dist(pts[k], pts[(k + 1) % n]) >= lado_min for k in range(n)]
 
     def dir_(k):
@@ -142,6 +156,17 @@ def _reto_no_anel(pts: list[tuple[float, float]], prof: float, vao: float, lado_
         dx, dy = pts[m][0] - pts[k][0], pts[m][1] - pts[k][1]
         return abs(-uy * dx + ux * dy)
 
+    def encontro(k, b):
+        """Ponto onde as retas dos lados k e b se cruzam (None se são paralelas)."""
+        ux, uy = dir_(k)
+        vx, vy = dir_(b)
+        det = ux * vy - uy * vx
+        if abs(det) < 1e-9:
+            return None
+        (x0, y0), (x1, y1) = pts[k], pts[b]
+        t = ((x1 - x0) * vy - (y1 - y0) * vx) / det
+        return (x0 + ux * t, y0 + uy * t)
+
     saida = [pts[0]]
     k = 0
     while k < n:
@@ -149,25 +174,55 @@ def _reto_no_anel(pts: list[tuple[float, float]], prof: float, vao: float, lado_
             saida.append(pts[(k + 1) % n])
             k += 1
             continue
-        salto = k
+        salto, canto = k, None
         for b in range(min(k + 10, n - 1), k, -1):
-            if not longo[b]:
+            if not longo[b] or math.dist(pts[(k + 1) % n], pts[b]) > vao:
                 continue
             ux, uy = dir_(k)
             vx, vy = dir_(b)
-            if ux * vx + uy * vy < math.cos(math.radians(10)):
+            meio = range(k + 1, min(b + 2, n))
+            if ux * vx + uy * vy >= math.cos(math.radians(10)):  # mesma face, dos dois lados
+                if any(fora(k, m) > prof for m in meio):
+                    continue
+                salto, canto = b, None
+                break
+            p = encontro(k, b)  # faces em ângulo: o canto é o encontro delas
+            if p is None or any(min(fora(k, m), fora(b, m)) > prof for m in meio):
                 continue
-            if math.dist(pts[(k + 1) % n], pts[b]) > vao:
+            # só degrau de canto: o que está no meio tem que caber perto do canto ideal, senão
+            # é um chanfro ou um recorte de verdade
+            if any(math.dist(p, pts[m]) > prof * 2 for m in range(k + 1, min(b + 1, n))):
                 continue
-            if any(fora(k, m) > prof for m in range(k + 1, b + 2) if m < n):
-                continue
-            salto = b
+            salto, canto = b, p
             break
-        saida.append(pts[(salto + 1) % n])
-        k = salto + 1
+        if salto == k:  # nada a juntar: o lado segue como está
+            saida.append(pts[(k + 1) % n])
+            k += 1
+            continue
+        if canto is not None:
+            saida.append(canto)
+        # continua a partir do lado b, que ainda pode ser o começo da próxima junção (o canto
+        # seguinte da mesma parede)
+        k = salto
     if len(saida) > 1 and saida[0] == saida[-1]:
         saida = saida[:-1]
+    saida = _sem_colineares(saida)
     return saida if len(saida) >= 3 else pts
+
+
+def _sem_colineares(pts: list[tuple[float, float]], tol: float = 1e-6) -> list[tuple[float, float]]:
+    """Tira vértices que ficaram no meio de uma reta (inclusive o ponto de emenda do anel)."""
+    n = len(pts)
+    if n < 4:
+        return pts
+    fora = []
+    for i in range(n):
+        a, b, c = pts[(i - 1) % n], pts[i], pts[(i + 1) % n]
+        area2 = abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+        base = math.dist(a, c) or 1.0
+        if area2 / base > tol:
+            fora.append(b)
+    return fora if len(fora) >= 3 else pts
 
 
 def _retificar(p: Polygon, prof: float, vao: float = 3.0, lado_min: float = 0.25) -> Polygon:
@@ -180,7 +235,14 @@ def _retificar(p: Polygon, prof: float, vao: float = 3.0, lado_min: float = 0.25
         anel = anel[:-1] if len(anel) > 1 and anel[0] == anel[-1] else anel
         if len(anel) < 5:
             return p
-        q = Polygon(_reto_no_anel(anel, prof, vao, lado_min))
+        # cada passada junta lados que a anterior deixou longos o bastante; entre elas o anel é
+        # girado, porque o ponto onde ele começa e termina não é limpo na passada
+        for giro in (0, 2, 3):
+            if giro:
+                corte = len(anel) // giro
+                anel = anel[corte:] + anel[:corte]
+            anel = _reto_no_anel(anel, prof, vao, lado_min)
+        q = Polygon(anel)
         if not q.is_valid:
             q = q.buffer(0)
     except Exception:
@@ -283,7 +345,7 @@ def detectar(
     tol_area = cfg.get("tolerancia_area", 0.05)
     f2 = fator_m * fator_m
 
-    linhas, vaos, divisao = _coletar(msp, cfg)
+    linhas, vaos, divisao = _coletar(msp, cfg, tol)
     if not linhas:
         return {}, []
     # grade de precisão: uniões robustas (sem "non-noded intersection") em qualquer versão do GEOS
@@ -306,10 +368,15 @@ def detectar(
         return abs(area_desenho * f2 - a) / a
 
     # 3. rótulo ↔ polígono inteiro
+    dentro = {j: {i for i in range(len(rotulos)) if p.distance(pts[i]) == 0} for j, p in enumerate(poligonos)}
     pares = []
     for i, (_, a, _) in enumerate(rotulos):
         for j, p in enumerate(poligonos):
             d = p.distance(pts[i])
+            # espaço que já tem rótulo dentro é dos rótulos de dentro: um rótulo de fora (com
+            # seta) só pode casar com espaço sem dono, senão toma o ambiente do vizinho
+            if d > 0 and dentro[j] and i not in dentro[j]:
+                continue
             if d <= raio and (e := erro(p.area, a)) <= tol_area:
                 pares.append((d > 0, e, d, i, j))
     out: dict[int, Contorno] = {}
