@@ -81,9 +81,12 @@ def test_gera_dxf_novo_sem_alterar_original(tmp_path):
     assert gerar_dxf_acabamentos(arq, rel.acabamentos, saida) == 6
     assert arq.read_bytes() == antes
     novo = ezdxf.readfile(saida)
-    pl = novo.modelspace().query('LWPOLYLINE[layer=="QTD-PISO-01"]')
+    pl = novo.modelspace().query('LWPOLYLINE[layer ? "QTD-PISO-01 .*"]')
     assert len(pl) == 1 and pl[0].closed
-    assert novo.layers.get("QTD-PAREDE-02").description == "PAREDE DOIS"
+    # uma camada por acabamento, com o material no nome e na descrição
+    camada = next(c for c in novo.layers if c.dxf.name.startswith("QTD-PAREDE-02"))
+    assert camada.dxf.name == "QTD-PAREDE-02 PAREDE DOIS"
+    assert camada.description == "PAREDE DOIS"
     with pytest.raises(ValueError):
         gerar_dxf_acabamentos(arq, rel.acabamentos, arq)
 

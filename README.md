@@ -77,6 +77,8 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
   - as camadas de parede fecham o espaço (linhas duplas e folgas de 2 cm são unidas);
   - cada bloco de esquadria fecha o vão pela parte que fica dentro da parede, e o arco da porta
     vira folha fechada, para o espaço não vazar nem perder o giro da porta;
+  - o vão da esquadria é fechado pelas linhas de parede do próprio bloco (as faces e os
+    batentes); a porta em si não vira barreira nem contorno;
   - linhas de projeção (`PROJ`) separam ambientes integrados; os pedaços são combinados até bater
     com as áreas dos rótulos;
   - dois ambientes no mesmo espaço sem linha entre eles recebem uma **divisa proposta** (reta que
@@ -96,8 +98,10 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
   - `QTD-PISO-xx` e `QTD-TETO-xx`: polilinha **fechada**, que é a área do ambiente;
   - `QTD-PAREDE-xx`: polilinhas **abertas**, só nos trechos colados a uma parede (a divisa com o
     ambiente vizinho, por projeção ou proposta, não é parede e fica de fora).
-  - O contorno **segue reto na face da parede**: batentes de porta e requadros de janela não
-    entram, então a área medida pode ficar pouco abaixo da área do rótulo.
+  - Uma camada por acabamento, com o material no nome e uma cor própria, por exemplo
+    `QTD-PISO-01 PORCELANATO ELIANE MUNARI MARFIM AC 60 x 60 cm`.
+  - O contorno **segue reto na face da parede**: a porta (folha, arco de abertura), os batentes,
+    os requadros de janela e os alisares não entram, e os cantos saem em esquadro.
 
 ## Só o Model e visualizador
 

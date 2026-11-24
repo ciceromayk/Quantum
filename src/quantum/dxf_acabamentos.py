@@ -12,9 +12,12 @@ Para cada ambiente com contorno e etiqueta:
   divisas com o ambiente vizinho (linha de projeção ou divisa proposta) não são parede e ficam
   de fora, então a soma dos comprimentos é o perímetro que entra no revestimento.
 
-Todas saem com a largura de LARGURA_M (2,5 cm no desenho), para aparecerem na planta. A
-descrição do quadro de acabamentos vai na descrição da camada. Contornos com divisa proposta
-(ambientes integrados sem linha de divisão) vão em QTD-<tipo>-<código>-PROPOSTA, para conferência.
+Todas saem com a largura de LARGURA_M (2,5 cm no desenho), para aparecerem na planta.
+
+Há uma camada por acabamento (um código do quadro), com o material no nome e na descrição, e
+uma cor própria: `QTD-PISO-01 PORCELANATO ELIANE MUNARI MARFIM AC 60 x 60 cm`. Contornos com
+divisa proposta (ambientes integrados sem linha de divisão) vão para a camada equivalente com
+`-PROPOSTA` depois do código, para conferência.
 """
 
 from __future__ import annotations
@@ -26,7 +29,15 @@ from ezdxf.addons.importer import IMPORT_ENTITIES, Importer
 
 from .ingestao import abrir_documento
 
-CORES = {"piso": 3, "parede": 1, "teto": 5}  # verde, vermelho, azul (ACI)
+# Uma cor por acabamento, na faixa do tipo (ACI): piso em verde, parede em vermelho, teto em azul.
+CORES = {
+    "piso": (3, 92, 82, 72, 62, 102),
+    "parede": (1, 11, 21, 241, 231, 221),
+    "teto": (5, 141, 151, 161, 171, 181),
+}
+# o AutoCAD não aceita estes caracteres em nome de camada; os que separam número viram ponto
+PROIBIDOS = {ord(c): None for c in '<>"?*|=`'} | {ord(c): "." for c in ",;:"} | {ord(c): "-" for c in "/\\"}
+LIMITE_NOME = 100
 VERSAO = "R2013"  # AutoCAD 2013: abre em qualquer AutoCAD/LT atual e nos leitores livres
 LARGURA_M = 0.025  # espessura da polilinha, em metros (convertida para a unidade do desenho)
 
@@ -35,6 +46,25 @@ def _texto_seguro(t: str, limite: int = 200) -> str:
     """Descrição de camada numa linha só, sem caracteres de controle."""
     t = " ".join(str(t).split())
     return "".join(c for c in t if c.isprintable())[:limite]
+
+
+def _nome_camada(tipo: str, cod: str, material: str, proposta: bool) -> str:
+    """Camada do acabamento, com o material no nome: `QTD-PISO-01 PORCELANATO ELIANE ...`."""
+    base = f"QTD-{tipo.upper()}-{cod}" + ("-PROPOSTA" if proposta else "")
+    material = _texto_seguro(material).translate(PROIBIDOS).strip()
+    base = base.translate(PROIBIDOS)
+    nome = f"{base} {material}".strip() if material else base
+    return nome[:LIMITE_NOME].strip()
+
+
+def _cor(tipo: str, cod: str, codigos: dict[str, list[str]]) -> int:
+    """Cor da camada: uma por código, dentro da faixa do tipo."""
+    faixa = CORES[tipo]
+    try:
+        i = codigos[tipo].index(cod)
+    except (KeyError, ValueError):
+        i = 0
+    return faixa[i % len(faixa)]
 
 
 def _documento_limpo(origem: str | Path):
@@ -90,15 +120,17 @@ def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Pa
     catalogo = acabamentos.get("catalogo", {})
     fator_m = acabamentos.get("fator_m") or 1.0
     largura = LARGURA_M / fator_m
+    codigos = {t: sorted({a["codigos"][t] for a in ambientes if t in a["codigos"]}) for t in CORES}
     n = 0
     for a in ambientes:
         for tipo, cod in sorted(a["codigos"].items()):
             if tipo not in CORES:
                 continue
-            nome = f"QTD-{tipo.upper()}-{cod}" + ("-PROPOSTA" if a.get("contorno_origem") == "proposta" else "")
+            material = catalogo.get(tipo, {}).get(cod, "")
+            nome = _nome_camada(tipo, cod, material, a.get("contorno_origem") == "proposta")
             if nome not in doc.layers:
-                camada = doc.layers.add(nome, color=CORES[tipo])
-                camada.description = _texto_seguro(catalogo.get(tipo, {}).get(cod, ""))
+                camada = doc.layers.add(nome, color=_cor(tipo, cod, codigos))
+                camada.description = _texto_seguro(material)
             atrib = {"layer": nome, "const_width": largura}
             if tipo == "parede":
                 # só os trechos colados à parede; sem trecho identificado, o contorno inteiro
