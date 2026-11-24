@@ -50,6 +50,8 @@ export interface AmbienteAcabamento {
   codigos: Partial<Record<"piso" | "parede" | "teto", string>>;
   area_contorno_m2: number | null;
   perimetro_m: number | null;
+  contorno?: [number, number][] | null; // unidades do desenho
+  contorno_origem?: string | null;
 }
 
 export interface Acabamentos {
@@ -113,6 +115,18 @@ interface RelatorioReg {
   markdown: string;
   xlsx_base64: string;
   dxf_acabamentos_base64?: string | null;
+  geometria?: Geometria | { erro: string } | null;
+}
+
+/** Desenho do Model simplificado para o visualizador (metros). */
+export interface Geometria {
+  caixa: [number, number, number, number] | null;
+  foco?: [number, number, number, number] | null; // miolo do desenho, para enquadrar
+  camadas: Record<string, { cor: string; linhas: number[][] }>;
+  textos: [number, number, number, string, string][]; // x, y, altura, texto, camada
+  pontos: number;
+  cortado: boolean;
+  fator_m: number;
 }
 
 export const AVISO =
@@ -349,6 +363,14 @@ export const api = {
   },
   removerCorte: async (id: number) => banco.apagar("cortes", id),
 
+  /** Geometria para o visualizador; null se a análise é de antes do visualizador (use Reprocessar). */
+  geometria: async (id: number): Promise<Geometria | null> => {
+    const g = (await banco.obter<RelatorioReg>("relatorios", id))?.geometria;
+    if (!g) return null;
+    if ("erro" in g) throw new Error(`Não foi possível montar o desenho: ${g.erro}`);
+    return g;
+  },
+
   analise: async (id: number): Promise<AnaliseDetalhe> => {
     const a = exigir(await banco.obter<AnaliseReg>("analises", id), "Análise");
     const rel = await banco.obter<RelatorioReg>("relatorios", id);
@@ -387,7 +409,7 @@ export const api = {
     for (const a of analises) {
       const r = await banco.obter<RelatorioReg>("relatorios", a.id);
       // o DXF gerado é grande e sai de novo ao reprocessar: não vai no backup
-      relatorios[a.id] = r && { ...r, dxf_acabamentos_base64: null };
+      relatorios[a.id] = r && { ...r, dxf_acabamentos_base64: null, geometria: null };
     }
     const dados = { formato: "quantum-projeto", versao: 1, exportado_em: agora(), aviso: AVISO, projeto: p, pavimentos: pavs, analises, relatorios };
     baixar(`${p.nome.replace(/[^\w\-À-ú ]+/g, "_")}.quantum.json`, new Blob([JSON.stringify(dados)], { type: "application/json" }));

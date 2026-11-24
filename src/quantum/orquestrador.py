@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .agentes import AgenteAcabamentos, AgenteAuditor, AgenteDisciplina, AgenteOrcamentista
 from .ingestao import carregar
-from .modelos import Relatorio
+from .modelos import Pendencia, Relatorio, Severidade
 from .regras import carregar_regras
 
 
@@ -74,6 +74,11 @@ def analisar(
 
     pend, nao_class = AgenteAuditor(r).auditar(desenho, usadas, medidas, rotuladas)
     rel.pendencias = pend + rel.pendencias
+    if getattr(desenho, "ignoradas_layout", 0):
+        rel.pendencias.append(Pendencia(
+            "auditoria", Severidade.INFO,
+            f"Lido só o Model: {desenho.ignoradas_layout} entidade(s) das pranchas (layouts) foram ignoradas.",
+        ))
     rel.camadas_nao_classificadas = nao_class
 
     if tabela_precos:

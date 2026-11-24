@@ -114,6 +114,7 @@ h2 {
 }
 .acoes {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -410,6 +411,7 @@ button:disabled,
 }
 .marcar {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
   font-size: 13px;
@@ -444,4 +446,22 @@ button:disabled,
   align-items: center;
   flex-wrap: wrap;
   padding: 4px 0;
+}
+
+/* Visualizador da planta */
+.visualizador { display: flex; flex-direction: column; gap: 8px; }
+.vis-barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.vis-corpo { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 12px; }
+.vis-tela { position: relative; height: min(70vh, 720px); border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; background: #ffffff; }
+.vis-tela canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.vis-tela canvas:active { cursor: grabbing; }
+.vis-info { position: absolute; top: 10px; left: 10px; max-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--superficie); color: var(--texto); border: 1px solid var(--borda); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); font-size: 0.9rem; line-height: 1.45; }
+.vis-camadas { list-style: none; margin: 0; padding: 8px; max-height: min(70vh, 720px); overflow: auto; border: 1px solid var(--borda); border-radius: 8px; background: var(--superficie); font-size: 0.85rem; }
+.vis-camadas li { padding: 2px 0; }
+.vis-camadas .marcar { display: flex; align-items: center; gap: 6px; word-break: break-all; }
+.amostra { width: 12px; height: 12px; border-radius: 2px; flex: none; border: 1px solid var(--borda); }
+@media (max-width: 720px) {
+  .vis-corpo { grid-template-columns: 1fr; }
+  .vis-tela { height: 60vh; }
+  .vis-camadas { max-height: 30vh; }
 }
