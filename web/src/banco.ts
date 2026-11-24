@@ -98,4 +98,16 @@ export const banco = {
   async apagar(nome: Loja, chave: IDBValidKey): Promise<void> {
     await req((await loja(nome, "readwrite")).delete(chave));
   },
+  /** Apaga várias chaves de várias lojas numa transação só: ou sai tudo, ou nada. */
+  async apagarVarios(itens: [Loja, IDBValidKey][]): Promise<void> {
+    if (!itens.length) return;
+    const nomes = [...new Set(itens.map(([l]) => l))];
+    const t = (await abrir()).transaction(nomes, "readwrite");
+    await new Promise<void>((ok, falha) => {
+      t.oncomplete = () => ok();
+      t.onerror = () => falha(t.error);
+      t.onabort = () => falha(t.error ?? new Error("Exclusão cancelada pelo navegador"));
+      for (const [l, chave] of itens) t.objectStore(l).delete(chave);
+    });
+  },
 };

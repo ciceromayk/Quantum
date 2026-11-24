@@ -465,3 +465,45 @@ button:disabled,
   .vis-tela { height: 60vh; }
   .vis-camadas { max-height: 30vh; }
 }
+
+/* Exclusão (sempre com confirmação na própria linha) */
+.perigo-btn {
+  background: transparent;
+  color: var(--bloqueante);
+  border-color: var(--bloqueante);
+  padding: 3px 10px;
+  font-size: 13px;
+}
+.perigo-btn.grande {
+  padding: 7px 14px;
+  font-size: inherit;
+}
+.perigo-btn.cheio {
+  background: var(--bloqueante);
+  color: var(--superficie);
+}
+.confirmar-exclusao {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bloqueante-fundo);
+  color: var(--texto);
+  font-size: 13px;
+  max-width: 520px;
+  white-space: normal;
+  text-align: left;
+}
+.confirmar-exclusao .pergunta {
+  flex: 1 1 220px;
+}
+.acoes-linha {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
