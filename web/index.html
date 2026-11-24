@@ -7,6 +7,38 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Se o app nem chegar a aparecer (script que não carregou, versão antiga no cache do
+      // navegador, erro antes de montar), a página não pode ficar em branco.
+      (function () {
+        var falou = false;
+        function avisar(motivo) {
+          var raiz = document.getElementById("root");
+          if (falou || !raiz || raiz.hasChildNodes()) return;
+          falou = true;
+          raiz.innerHTML =
+            '<div style="font:16px/1.5 system-ui,sans-serif;max-width:640px;margin:48px auto;padding:0 16px;color:#1c2430">' +
+            '<h1 style="font-size:20px">O Quantum não abriu nesta página</h1>' +
+            '<p>Pode ser uma versão antiga guardada no navegador. Recarregue segurando <strong>Ctrl+F5</strong> ' +
+            "(no Mac, Cmd+Shift+R). Os seus projetos continuam salvos neste navegador.</p>" +
+            '<p style="color:#5b6572;font-size:13px">Detalhe: ' +
+            String(motivo).replace(/[<>]/g, "") +
+            "</p>" +
+            '<button style="padding:8px 14px;font-size:15px" onclick="location.reload(true)">Recarregar</button>' +
+            "</div>";
+        }
+        window.addEventListener(
+          "error",
+          function (e) {
+            avisar((e && (e.message || (e.target && e.target.src))) || "erro ao carregar");
+          },
+          true,
+        );
+        window.setTimeout(function () {
+          avisar("a página demorou demais para abrir");
+        }, 15000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
