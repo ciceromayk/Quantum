@@ -163,3 +163,41 @@ def test_dxf_gerado_e_montado_do_zero_e_abre_limpo(tmp_path):
     assert "PRANCHA" not in novo.layouts.names()
     assert novo.layers.get("QTD-PISO-01").description == "PISO UM linha dois com tab"
     assert novo.header["$INSUNITS"] == 6
+
+
+def test_retificar_tira_reentrancia_de_esquadria_e_mantem_canto():
+    """A saliência rasa do vão (batente, requadro) sai; o canto reentrante do ambiente fica."""
+    from shapely.geometry import Polygon
+
+    from quantum.ambientes import _retificar
+
+    # retângulo 4 x 3 com uma saliência de 0,80 x 0,12 (requadro de janela) na parede de baixo
+    com_vao = Polygon([(0, 0), (1.6, 0), (1.6, -0.12), (2.4, -0.12), (2.4, 0), (4, 0), (4, 3), (0, 3)])
+    reto = _retificar(com_vao, 0.15)
+    assert reto.area == pytest.approx(12.0, abs=0.01)
+    assert len(reto.exterior.coords) == 5  # voltou a ser um retângulo (4 cantos + fechamento)
+    # o mesmo retângulo em L: o canto é fundo e continua lá
+    em_l = Polygon([(0, 0), (4, 0), (4, 3), (2, 3), (2, 1.5), (0, 1.5)])
+    assert _retificar(em_l, 0.15).area == pytest.approx(em_l.area, rel=0.001)
+
+
+def test_polilinhas_de_parede_ficam_coladas_na_parede_e_com_espessura(tmp_path):
+    arq = tmp_path / "planta.dxf"
+    criar_planta(arq)
+    rel = analisar(arq)
+    saida = tmp_path / "planta_acabamentos.dxf"
+    gerar_dxf_acabamentos(arq, rel.acabamentos, saida)
+    msp = ezdxf.readfile(saida).modelspace()
+
+    piso = msp.query('LWPOLYLINE[layer=="QTD-PISO-01"]')
+    parede = msp.query('LWPOLYLINE[layer=="QTD-PAREDE-01"]')
+    assert piso and parede
+    assert all(p.closed for p in piso), "piso e teto medem área: polilinha fechada"
+    assert all(not p.closed for p in parede), "parede segue só os trechos com parede: polilinha aberta"
+    assert {round(p.dxf.const_width, 4) for p in list(piso) + list(parede)} == {0.025}
+
+    # COZINHA e SERVIÇO são separadas por uma linha de projeção: essa divisa não é parede
+    amb = {a["nome"]: a for a in rel.acabamentos["ambientes"]}
+    cozinha = amb["COZINHA"]
+    assert cozinha["perimetro_m"] == pytest.approx(7.0, rel=0.02)  # 2 + 3 + 2, sem a divisa de 3 m
+    assert sum(len(t) for t in cozinha["trechos_parede"]) > 0

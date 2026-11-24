@@ -6,10 +6,15 @@ Assim não herda objetos estranhos do arquivo de origem (por exemplo, um DXF con
 pelo LibreDWG, que o AutoCAD recusa abrir). Entidades que o Importer não sabe copiar ficam de
 fora (o contorno e a planta de referência continuam lá).
 
-Para cada ambiente com contorno e etiqueta, cria uma LWPOLYLINE fechada em cada camada
-QTD-PISO-<código>, QTD-PAREDE-<código> e QTD-TETO-<código>. A descrição do quadro de
-acabamentos vai na descrição da camada. Contornos com divisa proposta (ambientes integrados
-sem linha de divisão) vão em QTD-<tipo>-<código>-PROPOSTA, para conferência.
+Para cada ambiente com contorno e etiqueta:
+- piso e teto (QTD-PISO-<código>, QTD-TETO-<código>): uma LWPOLYLINE fechada, que é a área;
+- parede (QTD-PAREDE-<código>): uma LWPOLYLINE aberta em cada trecho colado a uma parede. As
+  divisas com o ambiente vizinho (linha de projeção ou divisa proposta) não são parede e ficam
+  de fora, então a soma dos comprimentos é o perímetro que entra no revestimento.
+
+Todas saem com a largura de LARGURA_M (2,5 cm no desenho), para aparecerem na planta. A
+descrição do quadro de acabamentos vai na descrição da camada. Contornos com divisa proposta
+(ambientes integrados sem linha de divisão) vão em QTD-<tipo>-<código>-PROPOSTA, para conferência.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from .ingestao import abrir_documento
 
 CORES = {"piso": 3, "parede": 1, "teto": 5}  # verde, vermelho, azul (ACI)
 VERSAO = "R2013"  # AutoCAD 2013: abre em qualquer AutoCAD/LT atual e nos leitores livres
+LARGURA_M = 0.025  # espessura da polilinha, em metros (convertida para a unidade do desenho)
 
 
 def _texto_seguro(t: str, limite: int = 200) -> str:
@@ -82,6 +88,8 @@ def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Pa
     doc = _documento_limpo(origem)
     msp = doc.modelspace()
     catalogo = acabamentos.get("catalogo", {})
+    fator_m = acabamentos.get("fator_m") or 1.0
+    largura = LARGURA_M / fator_m
     n = 0
     for a in ambientes:
         for tipo, cod in sorted(a["codigos"].items()):
@@ -91,10 +99,18 @@ def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Pa
             if nome not in doc.layers:
                 camada = doc.layers.add(nome, color=CORES[tipo])
                 camada.description = _texto_seguro(catalogo.get(tipo, {}).get(cod, ""))
+            atrib = {"layer": nome, "const_width": largura}
+            if tipo == "parede":
+                # só os trechos colados à parede; sem trecho identificado, o contorno inteiro
+                trechos = [t for t in (a.get("trechos_parede") or []) if len(t) >= 2] or [a["contorno"]]
+                for t in trechos:
+                    msp.add_lwpolyline([tuple(p) for p in t], close=False, dxfattribs=atrib)
+                    n += 1
+                continue
             pts = [tuple(p) for p in a["contorno"]]
             if len(pts) > 1 and pts[0] == pts[-1]:
                 pts = pts[:-1]
-            msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": nome})
+            msp.add_lwpolyline(pts, close=True, dxfattribs=atrib)
             n += 1
     doc.audit()
     doc.saveas(saida)
