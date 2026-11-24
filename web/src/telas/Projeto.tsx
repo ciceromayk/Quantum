@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { api, Pavimento, PLANTA_GRANDE_MB, Projeto } from "../api";
+import { ACEITOS, api, Pavimento, PLANTA_GRANDE_MB, Projeto } from "../api";
 import { dataHora, STATUS } from "../formato";
 
 export default function ProjetoTela({ id }: { id: number }) {
@@ -69,7 +69,7 @@ export default function ProjetoTela({ id }: { id: number }) {
         </form>
       </section>
 
-      {projeto.pavimentos.length === 0 && <p className="discreto">Adicione um pavimento para enviar o DXF.</p>}
+      {projeto.pavimentos.length === 0 && <p className="discreto">Adicione um pavimento para enviar o desenho (DXF ou DWG).</p>}
       {projeto.pavimentos.map((p) => (
         <PavimentoCartao key={p.id} pav={p} aoMudar={carregar} />
       ))}
@@ -79,6 +79,7 @@ export default function ProjetoTela({ id }: { id: number }) {
 
 function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void }) {
   const [enviando, setEnviando] = useState(false);
+  const [etapa, setEtapa] = useState("");
   const [erro, setErro] = useState("");
 
   const [aviso, setAviso] = useState("");
@@ -93,12 +94,13 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
     );
     setEnviando(true);
     try {
-      await api.enviarArquivo(pav.id, arquivo);
+      await api.enviarArquivo(pav.id, arquivo, setEtapa);
       aoMudar();
     } catch (err) {
       setErro((err as Error).message);
     } finally {
       setEnviando(false);
+      setEtapa("");
     }
   }
 
@@ -118,10 +120,10 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
           </p>
         </div>
         <label className={`botao ${enviando ? "desativado" : ""}`}>
-          {enviando ? "Enviando…" : "Enviar DXF"}
+          {enviando ? etapa || "Enviando…" : "Enviar DXF / DWG"}
           <input
             type="file"
-            accept=".dxf"
+            accept={ACEITOS}
             hidden
             disabled={enviando}
             onChange={(e) => {
@@ -135,7 +137,7 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
       {aviso && <p className="discreto pequeno">{aviso}</p>}
       <Cortes pav={pav} aoMudar={aoMudar} aoErrar={setErro} />
       {analises.length === 0 ? (
-        <p className="discreto">Nenhum arquivo enviado. Exporte o pavimento como DXF no CAD e envie aqui (até 500 MB).</p>
+        <p className="discreto">Nenhum arquivo enviado. Envie o pavimento em DXF, DWG ou .zip com um deles (até 500 MB). Só o espaço do modelo (Model) é lido.</p>
       ) : (
         <table className="tabela">
           <thead>
@@ -157,6 +159,7 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
                   {a.etapa && (a.status === "na_fila" || a.status === "processando") && (
                     <div className="discreto pequeno">{a.etapa}</div>
                   )}
+                  {a.conversao && <div className="discreto pequeno">{a.conversao}</div>}
                   {a.erro && <div className="erro pequeno">{a.erro}</div>}
                 </td>
                 <td>{dataHora(a.criado_em)}</td>
@@ -187,18 +190,27 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
 
 function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void; aoErrar: (m: string) => void }) {
   const [enviando, setEnviando] = useState(false);
+  const [etapa, setEtapa] = useState("");
 
   async function enviar(arquivos: FileList | null) {
     if (!arquivos?.length) return;
     aoErrar("");
     setEnviando(true);
     try {
-      for (const a of Array.from(arquivos)) await api.enviarCorte(pav.id, a);
+      for (const a of Array.from(arquivos)) {
+        try {
+          await api.enviarCorte(pav.id, a, setEtapa);
+        } catch (err) {
+          throw new Error(`${a.name}: ${(err as Error).message}`);
+        }
+      }
       aoMudar();
     } catch (err) {
+      aoMudar();
       aoErrar((err as Error).message);
     } finally {
       setEnviando(false);
+      setEtapa("");
     }
   }
 
@@ -207,10 +219,10 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
       <div className="cortes-topo">
         <strong>Cortes para alturas de revestimento</strong>
         <label className={`botao secundario ${enviando ? "desativado" : ""}`}>
-          {enviando ? "Enviando…" : "Adicionar cortes"}
+          {enviando ? etapa || "Enviando…" : "Adicionar cortes"}
           <input
             type="file"
-            accept=".dxf"
+            accept={ACEITOS}
             multiple
             hidden
             disabled={enviando}
@@ -230,6 +242,7 @@ function Cortes({ pav, aoMudar, aoErrar }: { pav: Pavimento; aoMudar: () => void
           {pav.cortes.map((c) => (
             <li key={c.id}>
               {c.nome} <span className="discreto pequeno">({(c.tamanho / 1048576).toFixed(1).replace(".", ",")} MB)</span>
+              {c.conversao && <span className="discreto pequeno"> · {c.conversao}</span>}
               {c.tamanho > 100 * 1048576 && <span className="discreto pequeno"> · arquivo grande: a leitura leva alguns minutos</span>}
               <button
                 className="secundario-btn"

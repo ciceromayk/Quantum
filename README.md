@@ -125,7 +125,15 @@ Endereço: **https://ciceromayk.github.io/Quantum/**
 A interface em `web/` roda **inteira no navegador**: o mesmo núcleo Python é executado com
 [Pyodide](https://pyodide.org) (Python em WebAssembly) dentro de um Web Worker. Não há servidor.
 
-- O DXF **não sai do computador** de quem usa. Projetos, análises e relatórios ficam no
+- Aceita **DXF** (texto ou binário), **DWG** e **.zip** com um desenho dentro. O formato é
+  reconhecido pelo conteúdo. O DWG é convertido para DXF no próprio navegador pelo
+  [LibreDWG](https://www.gnu.org/software/libredwg/) em WebAssembly (pacote
+  [`@mlightcad/libredwg-web`](https://github.com/mlightcad/libredwg-web), GPL-3.0, carregado
+  só quando chega um DWG, cerca de 10 MB uma vez). Versões aceitas: AutoCAD R13 a 2018+ (formato
+  AC1032, usado até as versões atuais); anteriores são experimentais. Se uma versão não for lida, o
+  site pede para exportar DXF. O Quantum **não grava DWG**: a saída continua sendo o DXF pequeno só
+  com as camadas novas, para anexar como xref.
+- O desenho **não sai do computador** de quem usa. Projetos, análises e relatórios ficam no
   IndexedDB daquele navegador.
 - Para backup ou para levar a outro computador, use **Exportar** (gera um `.json` sem o DXF) e
   **Importar projeto**.

@@ -56,3 +56,16 @@ def test_geometria_herda_camada_do_bloco_e_mostra_atributos(tmp_path):
     assert set(g["camadas"]) == {"PORTAS", "BATENTE"}
     assert g["camadas"]["PORTAS"]["cor"] == "#ff0000"
     assert any(t[3] == "P1" for t in g["textos"])
+
+
+def test_planta_em_dxf_binario(tmp_path, planta):
+    """DXF binário (Salvar como > DXF binário) passa pelo mesmo motor que o DXF texto."""
+    import ezdxf
+
+    binario = tmp_path / "planta_binaria.dxf"
+    ezdxf.readfile(planta).saveas(binario, fmt="bin")
+    assert binario.read_bytes().startswith(b"AutoCAD Binary DXF")
+    texto = json.loads(processar_dxf(str(planta)))["resultado"]
+    saida = json.loads(processar_dxf(str(binario)))["resultado"]
+    assert saida["desenho"]["total_entidades"] == texto["desenho"]["total_entidades"]
+    assert len(saida["itens"]) == len(texto["itens"])
