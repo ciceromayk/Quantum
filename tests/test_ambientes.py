@@ -304,3 +304,24 @@ def test_degrau_de_parede_fica_no_contorno_e_requadro_some():
     pts = [(round(x, 3), round(y, 3)) for x, y in reto.exterior.coords]
     assert (2.0, 3.0) in pts and (2.0, 3.11) in pts  # a virada continua lá
     assert reto.area == pytest.approx(degrau.area, abs=0.001)
+
+
+def test_geometria_recebe_as_polilinhas_geradas(tmp_path):
+    """O visualizador mostra as mesmas polilinhas do DXF gerado, como camadas QTD-*."""
+    import ezdxf as _ezdxf
+    from quantum.visualizacao import geometria, juntar_geradas
+
+    arq = tmp_path / "planta.dxf"
+    criar_planta(arq)
+    rel = analisar(arq)
+    geo = geometria(_ezdxf.readfile(arq).modelspace(), rel.desenho.fator_m or 1.0)
+    antes = set(geo["camadas"])
+    juntar_geradas(geo, rel.acabamentos)
+    assert geo["geradas"], "nenhuma camada gerada"
+    assert all(n.startswith("QTD-") for n in geo["geradas"])
+    assert set(geo["geradas"]) == set(geo["camadas"]) - antes
+    assert geo["largura_gerada"] == 0.025
+    # mesma contagem de polilinhas do arquivo gerado
+    saida = tmp_path / "planta_acabamentos.dxf"
+    n = gerar_dxf_acabamentos(arq, rel.acabamentos, saida)
+    assert sum(len(geo["camadas"][g]["linhas"]) for g in geo["geradas"]) == n

@@ -184,39 +184,41 @@ def _unir_integrados(ambientes: list[dict], tipo: str, folga: float, fator: floa
     return saida
 
 
-def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Path) -> int:
-    """Devolve o número de polilinhas criadas. Não grava nada se nenhum ambiente tem contorno."""
+def polilinhas_acabamentos(acabamentos: dict) -> list[dict]:
+    """As polilinhas do DXF de acabamentos, nas unidades do desenho.
+
+    Mesma lista que vai para o arquivo, usada também pelo visualizador do navegador. Cada item:
+    `camada`, `material`, `cor` (ACI), `tipo`, `codigo`, `fechada` e `pontos`."""
     ambientes = [a for a in acabamentos.get("ambientes", []) if a.get("contorno") and a.get("codigos")]
     if not ambientes:
-        return 0
-    if Path(origem).resolve() == Path(saida).resolve():
-        raise ValueError("O DXF gerado precisa ter outro nome: o original não é alterado.")
-    doc = _documento_limpo(origem)
-    msp = doc.modelspace()
+        return []
     catalogo = acabamentos.get("catalogo", {})
     fator_m = acabamentos.get("fator_m") or 1.0
-    largura = LARGURA_M / fator_m
     codigos = {t: sorted({a["codigos"][t] for a in ambientes if t in a["codigos"]}) for t in CORES}
-    n = 0
+    saida: list[dict] = []
 
-    def camada_de(tipo: str, cod: str, proposta: bool) -> dict:
+    def peca(tipo: str, cod: str, proposta: bool, pontos, fechada: bool) -> None:
         material = catalogo.get(tipo, {}).get(cod, "")
-        nome = _nome_camada(tipo, cod, material, proposta)
-        if nome not in doc.layers:
-            camada = doc.layers.add(nome, color=_cor(tipo, cod, codigos))
-            camada.description = _texto_seguro(material)
-        return {"layer": nome, "const_width": largura}
+        saida.append({
+            "camada": _nome_camada(tipo, cod, material, proposta),
+            "material": _texto_seguro(material),
+            "cor": _cor(tipo, cod, codigos),
+            "tipo": tipo,
+            "codigo": cod,
+            "proposta": proposta,
+            "fechada": fechada,
+            "pontos": [(float(p[0]), float(p[1])) for p in pontos],
+        })
 
     # parede: um trecho por pedaço colado à parede, ambiente por ambiente
     for a in ambientes:
         cod = a["codigos"].get("parede")
         if not cod:
             continue
-        atrib = camada_de("parede", cod, a.get("contorno_origem") == "proposta")
+        proposta = a.get("contorno_origem") == "proposta"
         trechos = [t for t in (a.get("trechos_parede") or []) if len(t) >= 2] or [a["contorno"]]
         for t in trechos:
-            msp.add_lwpolyline([tuple(p) for p in t], close=False, dxfattribs=atrib)
-            n += 1
+            peca("parede", cod, proposta, t, False)
 
     # piso e teto: área fechada, com os integrados de mesmo acabamento unidos
     folga = (LARGURA_M / 2) / fator_m
@@ -228,8 +230,30 @@ def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Pa
                     pts = pts[:-1]
                 if len(pts) < 3:
                     continue
-                msp.add_lwpolyline(pts, close=True, dxfattribs=camada_de(tipo, cod, proposta))
-                n += 1
+                peca(tipo, cod, proposta, pts, True)
+    return saida
+
+
+def gerar_dxf_acabamentos(origem: str | Path, acabamentos: dict, saida: str | Path) -> int:
+    """Devolve o número de polilinhas criadas. Não grava nada se nenhum ambiente tem contorno."""
+    pecas = polilinhas_acabamentos(acabamentos)
+    if not pecas:
+        return 0
+    if Path(origem).resolve() == Path(saida).resolve():
+        raise ValueError("O DXF gerado precisa ter outro nome: o original não é alterado.")
+    doc = _documento_limpo(origem)
+    msp = doc.modelspace()
+    largura = LARGURA_M / (acabamentos.get("fator_m") or 1.0)
+    for p in pecas:
+        nome = p["camada"]
+        if nome not in doc.layers:
+            camada = doc.layers.add(nome, color=p["cor"])
+            camada.description = p["material"]
+        msp.add_lwpolyline(
+            [tuple(q) for q in p["pontos"]],
+            close=p["fechada"],
+            dxfattribs={"layer": nome, "const_width": largura},
+        )
     doc.audit()
     doc.saveas(saida)
-    return n
+    return len(pecas)

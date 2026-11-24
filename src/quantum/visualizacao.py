@@ -104,6 +104,40 @@ def geometria(msp, fator_m: float) -> dict:
     return {"caixa": caixa, "foco": _foco(camadas) or caixa, "camadas": camadas, "textos": textos, "pontos": total, "cortado": cortado}
 
 
+def juntar_geradas(geo: dict, acabamentos: dict) -> dict:
+    """Soma à geometria as polilinhas geradas (camadas QTD-*), para o visualizador mostrá-las.
+
+    Entram como camadas normais, ligáveis e desligáveis, com a cor da camada do DXF gerado;
+    `geradas` lista os nomes, para o desenho sair com a espessura das polilinhas."""
+    from .dxf_acabamentos import LARGURA_M, polilinhas_acabamentos
+
+    f = acabamentos.get("fator_m") or 1.0
+    camadas = geo.setdefault("camadas", {})
+    nomes: list[str] = []
+    for p in polilinhas_acabamentos(acabamentos):
+        pts = [(x * f, y * f) for x, y in p["pontos"]]
+        if p["fechada"] and len(pts) > 2:
+            pts.append(pts[0])
+        plano = []
+        for x, y in pts:
+            plano += [round(x, 3), round(y, 3)]
+        c = camadas.get(p["camada"])
+        if c is None:
+            c = camadas[p["camada"]] = {"cor": _cor_aci(p["cor"]), "linhas": []}
+            nomes.append(p["camada"])
+        c["linhas"].append(plano)
+    geo["geradas"] = sorted(nomes)
+    geo["largura_gerada"] = LARGURA_M
+    return geo
+
+
+def _cor_aci(aci: int) -> str:
+    r, g, b = colors.aci2rgb(abs(aci) or 7)
+    if r > 235 and g > 235 and b > 235:
+        r, g, b = 40, 40, 40
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 def _foco(camadas: dict) -> list[float] | None:
     """Caixa do miolo do desenho (descarta 1% dos pontos em cada ponta), para enquadrar sem
     que elementos soltos e distantes (quadros, legendas) deixem a planta pequena."""
