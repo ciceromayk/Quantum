@@ -190,6 +190,10 @@ def _reto_no_anel(pts: list[tuple[float, float]], prof: float, vao: float, lado_
             vx, vy = dir_(b)
             meio = range(k + 1, min(b + 2, n))
             if ux * vx + uy * vy >= math.cos(math.radians(10)):  # mesma face, dos dois lados
+                # degrau de verdade (ponta de parede, viradinha): as duas faces são paralelas
+                # mas não estão no mesmo plano, então a virada fica no contorno
+                if max(fora(k, b), fora(k, (b + 1) % n)) > prof / 5:
+                    continue
                 if any(fora(k, m) > prof for m in meio):
                     continue
                 salto, canto = b, None

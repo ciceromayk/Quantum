@@ -51,7 +51,7 @@ PROIBIDOS = {ord(c): None for c in '<>"?*|=`'} | {ord(c): "." for c in ",;:"} | 
 LIMITE_NOME = 100
 VERSAO = "R2013"  # AutoCAD 2013: abre em qualquer AutoCAD/LT atual e nos leitores livres
 LARGURA_M = 0.025  # espessura da polilinha, em metros (convertida para a unidade do desenho)
-FRESTA_M = 0.07  # fresta máxima fechada ao unir integrados (metade de uma parede de 15 cm)
+FRESTA_M = 0.02  # fresta máxima fechada ao unir integrados; menor que a ponta de parede mais fina
 
 
 def _texto_seguro(t: str, limite: int = 200) -> str:

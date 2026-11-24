@@ -99,14 +99,16 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
     **integrados** (contornos que se encostam, sem parede entre eles) com o **mesmo código** de
     piso ou de forro viram **uma polilinha só**, sem a divisa, e sem a marca `-PROPOSTA`: a área
     é contínua no desenho, embora o quantitativo continue somando ambiente por ambiente. Frestas
-    de até 7 cm entre os dois contornos (a divisa proposta é reta, a parede vizinha nem sempre)
+    de até 2 cm entre os dois contornos (a divisa proposta é reta, a parede vizinha nem sempre)
     são fechadas na união;
   - `QTD-PAREDE-xx`: polilinhas **abertas**, só nos trechos colados a uma parede (a divisa com o
     ambiente vizinho, por projeção ou proposta, não é parede e fica de fora).
   - Uma camada por acabamento, com o material no nome e uma cor própria, por exemplo
     `QTD-PISO-01 PORCELANATO ELIANE MUNARI MARFIM AC 60 x 60 cm`.
   - O contorno **segue reto na face da parede**: a porta (folha, arco de abertura), os batentes,
-    os requadros de janela e os alisares não entram, e os cantos saem em esquadro.
+    os requadros de janela e os alisares não entram, e os cantos saem em esquadro. Um **degrau
+    de parede** (ponta de alvenaria, viradinha) não é requadro: as duas faces são paralelas mas
+    não estão no mesmo plano, então a virada fica no contorno e entra no perímetro de parede.
 
 ## Só o Model e visualizador
 
