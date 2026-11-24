@@ -131,6 +131,8 @@ export interface Geometria {
   pontos: number;
   cortado: boolean;
   fator_m: number;
+  geradas?: string[]; // camadas das polilinhas de acabamento geradas (QTD-*)
+  largura_gerada?: number; // espessura delas, em metros
 }
 
 export const AVISO =

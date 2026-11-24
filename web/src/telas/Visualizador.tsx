@@ -1,8 +1,9 @@
 import { PointerEvent as RPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Acabamentos, AmbienteAcabamento, api, Geometria } from "../api";
 
-// Visualizador do Model: desenho em canvas, com camadas, textos e os contornos de ambiente
-// detectados. Arrastar move, roda do mouse ou pinça aproxima, clique num ambiente mostra os dados.
+// Visualizador do Model: desenho em canvas, com camadas, textos e as polilinhas geradas de
+// acabamento (as mesmas do DXF que se baixa), cada uma na sua camada, ligável e desligável.
+// Arrastar move, roda do mouse ou pinça aproxima, clique num ambiente mostra os dados.
 
 type Vista = { s: number; tx: number; ty: number }; // tela = (x*s + tx, -y*s + ty)
 
@@ -51,13 +52,18 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
   const [vista, setVista] = useState<Vista | null>(null);
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
   const [verTextos, setVerTextos] = useState(true);
-  const [verAmbientes, setVerAmbientes] = useState(true);
+  const [verAmbientes, setVerAmbientes] = useState(false);
   const [sel, setSel] = useState<AmbienteAcabamento | null>(null);
   const ponteiros = useRef(new Map<number, { x: number; y: number }>());
   const arrastou = useRef(false);
 
   const f = geo.fator_m || 1;
-  const nomes = useMemo(() => Object.keys(geo.camadas).sort(), [geo]);
+  const geradas = useMemo(() => geo.geradas ?? [], [geo]);
+  const nomes = useMemo(
+    () => Object.keys(geo.camadas).filter((n) => !geradas.includes(n)).sort(),
+    [geo, geradas],
+  );
+  const largura = geo.largura_gerada ?? 0.025;
   // Caminhos montados uma vez, em metros; o zoom só muda a transformação.
   const caminhos = useMemo(() => {
     const out: Record<string, Path2D> = {};
@@ -137,6 +143,17 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
       ctx.strokeStyle = geo.camadas[nome].cor;
       ctx.stroke(caminhos[nome]);
     }
+    // as polilinhas geradas vão por cima, com a espessura que têm no DXF (2,5 cm)
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    for (const nome of geradas) {
+      if (ocultas.has(nome)) continue;
+      ctx.lineWidth = Math.max(largura, 1.5 / (vista.s * dpr));
+      ctx.strokeStyle = geo.camadas[nome].cor;
+      ctx.stroke(caminhos[nome]);
+    }
+    ctx.lineJoin = "miter";
+    ctx.lineCap = "butt";
     if (verAmbientes && sel) {
       const item = ambientes.find((x) => x.a === sel);
       if (item) {
@@ -163,7 +180,7 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
         ctx.fillText(txt, sx, sy);
       }
     }
-  }, [vista, ocultas, verTextos, verAmbientes, sel, caminhos, nomes, geo, ambientes]);
+  }, [vista, ocultas, verTextos, verAmbientes, sel, caminhos, nomes, geradas, largura, geo, ambientes]);
 
   function zoom(fator: number, cx: number, cy: number) {
     setVista((v) => v && { s: v.s * fator, tx: cx - (cx - v.tx) * fator, ty: cy - (cy - v.ty) * fator });
@@ -227,6 +244,26 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
       return n;
     });
 
+  const mostrarGrupo = (grupo: string[], ver: boolean) =>
+    setOcultas((o) => {
+      const n = new Set(o);
+      for (const nome of grupo) {
+        if (ver) n.delete(nome);
+        else n.add(nome);
+      }
+      return n;
+    });
+
+  const lista = (nome: string) => (
+    <li key={nome}>
+      <label className="marcar">
+        <input type="checkbox" checked={!ocultas.has(nome)} onChange={() => alternar(nome)} />
+        <span className="amostra" style={{ background: geo.camadas[nome].cor }} />
+        {nome}
+      </label>
+    </li>
+  );
+
   const total = acabamentos?.ambientes.length ?? 0;
 
   return (
@@ -244,9 +281,19 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
         <label className="marcar">
           <input type="checkbox" checked={verTextos} onChange={(e) => setVerTextos(e.target.checked)} /> Textos
         </label>
+        {geradas.length > 0 && (
+          <label className="marcar">
+            <input
+              type="checkbox"
+              checked={geradas.some((n) => !ocultas.has(n))}
+              onChange={(e) => mostrarGrupo(geradas, e.target.checked)}
+            />{" "}
+            Polilinhas geradas ({geradas.length} camadas)
+          </label>
+        )}
         {total > 0 && (
           <label className="marcar">
-            <input type="checkbox" checked={verAmbientes} onChange={(e) => setVerAmbientes(e.target.checked)} /> Contornos dos ambientes (
+            <input type="checkbox" checked={verAmbientes} onChange={(e) => setVerAmbientes(e.target.checked)} /> Pintar os ambientes (
             {ambientes.length} de {total})
           </label>
         )}
@@ -279,20 +326,21 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
           )}
         </div>
         <ul className="vis-camadas">
-          {nomes.map((n) => (
-            <li key={n}>
-              <label className="marcar">
-                <input type="checkbox" checked={!ocultas.has(n)} onChange={() => alternar(n)} />
-                <span className="amostra" style={{ background: geo.camadas[n].cor }} />
-                {n}
-              </label>
-            </li>
-          ))}
+          {geradas.length > 0 && (
+            <>
+              <li className="vis-grupo">Acabamentos (geradas)</li>
+              {geradas.map(lista)}
+              <li className="vis-grupo">Do arquivo</li>
+            </>
+          )}
+          {nomes.map(lista)}
         </ul>
       </div>
       <p className="discreto pequeno">
         Só o Model do arquivo (pranchas e layouts não entram). Arraste para mover, use a roda do mouse ou a pinça para aproximar, clique
         num ambiente para ver os dados.
+        {geradas.length > 0 &&
+          " As camadas QTD-* são as polilinhas geradas, as mesmas do DXF que se baixa: piso e teto fechados, parede só nos trechos colados à parede."}
         {verAmbientes && total > 0 && " Verde: contorno detectado; azul: separado por projeção; laranja: divisa proposta, a conferir."}
         {geo.cortado && " Desenho muito grande: parte das linhas não foi mostrada (os quantitativos usam o arquivo inteiro)."}
       </p>

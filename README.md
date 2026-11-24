@@ -93,6 +93,9 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
   escrito na faixa. **Alturas tiradas de cortes valem só para os ambientes cortados e precisam de
   conferência.** A altura do corte vale para o ambiente da planta com o mesmo nome; se o mesmo
   nome aparece com alturas diferentes, nenhuma é usada.
+- A aba **Planta** mostra as polilinhas geradas junto com o desenho: cada acabamento entra como
+  uma camada `QTD-*` própria, com a cor do DXF gerado, que se liga e desliga na lista de camadas
+  (grupo "Acabamentos (geradas)"). É o mesmo desenho do arquivo que se baixa.
 - Gera um **DXF novo** (`<arquivo>_acabamentos.dxf`), montado do zero em AutoCAD 2013 com uma
   cópia do Model. O original não é alterado. As polilinhas saem com 2,5 cm de espessura:
   - `QTD-PISO-xx` e `QTD-TETO-xx`: polilinha **fechada**, que é a área do ambiente. Ambientes

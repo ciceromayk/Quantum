@@ -47,6 +47,13 @@ def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None
             with open(destino, "rb") as fh:
                 dxf_b64 = base64.b64encode(fh.read()).decode("ascii")
             os.remove(destino)
+        if isinstance(geo, dict) and "erro" not in geo:
+            from .visualizacao import juntar_geradas
+
+            try:  # as polilinhas geradas aparecem no visualizador como camadas próprias
+                juntar_geradas(geo, rel.acabamentos)
+            except Exception as exc:
+                geo["erro_geradas"] = str(exc)
     return json.dumps(
         {
             "resultado": json.loads(para_json(rel)),
