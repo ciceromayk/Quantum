@@ -3,6 +3,7 @@
 // processamento roda no Web Worker com Pyodide (motor.worker.ts).
 
 import { banco } from "./banco";
+import { prepararDesenho, type ConverterDwg } from "./conversao";
 
 export type Severidade = "bloqueante" | "alerta" | "info";
 export type Status = "na_fila" | "processando" | "concluida" | "erro";
@@ -16,6 +17,8 @@ export interface AnaliseResumo {
   etapa?: string | null;
   criado_em: string;
   concluido_em: string | null;
+  /** Como o arquivo foi preparado (DWG convertido, .zip descompactado, DXF binário). */
+  conversao?: string | null;
 }
 
 export interface Pavimento {
@@ -35,6 +38,7 @@ export interface CorteResumo {
   nome: string;
   tamanho: number;
   criado_em: string;
+  conversao?: string | null;
 }
 interface CorteReg extends CorteResumo {
   pavimento_id: number;
@@ -140,7 +144,25 @@ const PARAMETROS_CONHECIDOS: Record<string, string> = {
   espessura_laje: "Espessura da laje (m)",
 };
 
-const TAMANHO_MAX_MB = 500;
+/** Formatos aceitos no envio (planta e cortes). */
+export const ACEITOS = ".dxf,.dwg,.zip";
+
+/** DWG vira DXF num worker próprio, encerrado no fim para liberar a memória do WebAssembly. */
+const converterDwg: ConverterDwg = (dwg, versao) =>
+  new Promise((ok, falha) => {
+    const w = new Worker(new URL("./conversor.worker.ts", import.meta.url), { type: "module" });
+    const fim = () => w.terminate();
+    w.onmessage = (ev) => {
+      fim();
+      if (ev.data.tipo === "ok") ok({ dxf: ev.data.dxf as Blob, aviso: ev.data.aviso });
+      else falha(new Error(ev.data.erro));
+    };
+    w.onerror = (ev) => {
+      fim();
+      falha(new Error(`O leitor de DWG não carregou (${ev.message || "erro no worker"}). Exporte o desenho como DXF e envie o DXF.`));
+    };
+    w.postMessage({ dwg, versao });
+  });
 /** Acima disso a planta pode faltar memória no navegador (o corte é lido em fluxo e aguenta mais). */
 export const PLANTA_GRANDE_MB = 150;
 
@@ -249,7 +271,7 @@ export async function recuperarInterrompidas() {
 async function montarPavimento(p: PavimentoReg, analises: AnaliseReg[]): Promise<Pavimento> {
   const cortes = (await banco.todos<CorteReg>("cortes"))
     .filter((c) => c.pavimento_id === p.id)
-    .map(({ id, nome, tamanho, criado_em }) => ({ id, nome, tamanho, criado_em }));
+    .map(({ id, nome, tamanho, criado_em, conversao }) => ({ id, nome, tamanho, criado_em, conversao }));
   return {
     ...p,
     cortes,
@@ -324,13 +346,9 @@ export const api = {
     return api.pavimento(id);
   },
 
-  enviarArquivo: async (pavimentoId: number, arquivo: File) => {
+  enviarArquivo: async (pavimentoId: number, arquivo: File, aoProgredir?: (etapa: string) => void) => {
     exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
-    const ext = arquivo.name.toLowerCase().split(".").pop();
-    if (ext === "dwg")
-      throw new Error("DWG não é lido no navegador. Exporte o arquivo como DXF no CAD (Salvar como > DXF) e envie novamente.");
-    if (ext !== "dxf") throw new Error("Envie um arquivo .dxf");
-    if (arquivo.size > TAMANHO_MAX_MB * 1024 * 1024) throw new Error(`Arquivo maior que ${TAMANHO_MAX_MB} MB`);
+    const { dxf, nota } = await prepararDesenho(arquivo, arquivo.name, converterDwg, aoProgredir);
     const anteriores = (await banco.todos<AnaliseReg>("analises")).filter((a) => a.pavimento_id === pavimentoId);
     const reg = {
       pavimento_id: pavimentoId,
@@ -342,9 +360,10 @@ export const api = {
       criado_em: agora(),
       concluido_em: null,
       pendencias_por_severidade: {},
+      conversao: nota,
     };
     const id = await banco.gravar("analises", reg);
-    await banco.gravar("arquivos", arquivo, id); // o File (Blob) fica no disco do navegador
+    await banco.gravar("arquivos", dxf, id); // o DXF (Blob) fica no disco do navegador; DWG e .zip já convertidos
     enfileirar(id);
     return { ...reg, id } as AnaliseResumo;
   },
@@ -352,13 +371,10 @@ export const api = {
   temDxfAcabamentos: async (id: number) => !!(await banco.obter<RelatorioReg>("relatorios", id))?.dxf_acabamentos_base64,
 
   /** Cortes valem para as próximas análises do pavimento (use Reprocessar nas anteriores). */
-  enviarCorte: async (pavimentoId: number, arquivo: File) => {
+  enviarCorte: async (pavimentoId: number, arquivo: File, aoProgredir?: (etapa: string) => void) => {
     exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
-    const ext = arquivo.name.toLowerCase().split(".").pop();
-    if (ext === "dwg") throw new Error("DWG não é lido no navegador. Exporte o corte como DXF e envie novamente.");
-    if (ext !== "dxf") throw new Error("Envie o corte em .dxf");
-    if (arquivo.size > TAMANHO_MAX_MB * 1024 * 1024) throw new Error(`Arquivo maior que ${TAMANHO_MAX_MB} MB`);
-    const reg = { pavimento_id: pavimentoId, nome: arquivo.name, tamanho: arquivo.size, criado_em: agora(), dados: arquivo as Blob };
+    const { dxf, nota } = await prepararDesenho(arquivo, arquivo.name, converterDwg, aoProgredir);
+    const reg = { pavimento_id: pavimentoId, nome: arquivo.name, tamanho: dxf.size, criado_em: agora(), dados: dxf, conversao: nota };
     await banco.gravar("cortes", reg);
   },
   removerCorte: async (id: number) => banco.apagar("cortes", id),

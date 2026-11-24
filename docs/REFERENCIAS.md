@@ -29,3 +29,20 @@ Quantum; todo o código aqui é próprio.
 - **Relevância futura:** útil se o Quantum passar a ler **PDF escaneado/imagem**. Nesse caso, os
   datasets e pesos têm licenças próprias (vários CC-BY-NC) e precisam de análise antes de uso
   comercial.
+
+## Bibliotecas de terceiros usadas pelo site
+
+### LibreDWG (`@mlightcad/libredwg-web` 0.9.1)
+
+- **Licença:** GPL-3.0 (LibreDWG é software livre da GNU; o pacote JavaScript/WebAssembly também é
+  GPL-3.0). Código-fonte: https://github.com/mlightcad/libredwg-web (versão 0.9.1) e
+  https://git.savannah.gnu.org/cgit/libredwg.git .
+- **Uso:** converter DWG em DXF no navegador (`web/src/conversor.worker.ts`). O módulo é um arquivo
+  separado (`libredwg-web-*.js` e `.wasm`), carregado só quando o usuário envia um DWG, sem
+  alterações.
+- **Atenção à licença:** a GPL exige que quem distribui o site com esse módulo ofereça o
+  código-fonte correspondente sob a GPL. Isso é compatível com um repositório aberto. Se o Quantum
+  for distribuído sob licença fechada, este conversor precisa ser revisto (por exemplo, trocado
+  pelo conversor comercial da ODA ou removido, voltando a pedir DXF).
+- **Versão fixa:** 0.8.8 falhou ao converter os DWG de teste do LibreDWG; 0.9.1 converteu R14,
+  2000, 2004, 2007, 2010, 2013 e 2018.
