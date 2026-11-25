@@ -46,11 +46,11 @@ export default function App() {
       </header>
       <main className="conteudo">
         {versaoNova && (
-          <p className="erro">O Quantum foi atualizado em outra aba. Recarregue esta página para continuar.</p>
+          <p className="erro" role="alert">O Quantum foi atualizado em outra aba. Recarregue esta página para continuar.</p>
         )}
         {erro ? (
           <div className="cartao">
-            <p className="erro">{erro}</p>
+            <p className="erro" role="alert">{erro}</p>
             <button onClick={() => window.location.reload()}>Recarregar</button>
           </div>
         ) : pronto ? (

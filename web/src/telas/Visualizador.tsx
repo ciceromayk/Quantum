@@ -38,7 +38,7 @@ export default function Visualizador({ analiseId, acabamentos }: { analiseId: nu
       .catch((e) => setErro((e as Error).message));
   }, [analiseId]);
 
-  if (erro) return <p className="erro">{erro}</p>;
+  if (erro) return <p className="erro" role="alert">{erro}</p>;
   if (geo === undefined) return <p className="discreto">Montando o desenho…</p>;
   if (geo === null)
     return <p className="discreto">Esta análise é de antes do visualizador. Use Reprocessar no pavimento para ver o desenho.</p>;

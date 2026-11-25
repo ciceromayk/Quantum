@@ -55,7 +55,7 @@ export default function ProjetoTela({ id }: { id: number }) {
     }
   }
 
-  if (!projeto) return erro ? <p className="erro">{erro}</p> : <p className="discreto">Carregando…</p>;
+  if (!projeto) return erro ? <p className="erro" role="alert">{erro}</p> : <p className="discreto">Carregando…</p>;
 
   return (
     <>
@@ -82,7 +82,7 @@ export default function ProjetoTela({ id }: { id: number }) {
           />
         </span>
       </div>
-      {erro && <p className="erro">{erro}</p>}
+      {erro && <p className="erro" role="alert">{erro}</p>}
 
       <section className="cartao">
         <h2>Novo pavimento</h2>
@@ -172,7 +172,7 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
           </label>
         </span>
       </div>
-      {erro && <p className="erro">{erro}</p>}
+      {erro && <p className="erro" role="alert">{erro}</p>}
       {aviso && <p className="discreto pequeno">{aviso}</p>}
       <Cortes pav={pav} aoMudar={aoMudar} aoErrar={setErro} />
       {analises.length === 0 ? (

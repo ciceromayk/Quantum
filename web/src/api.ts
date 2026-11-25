@@ -98,6 +98,7 @@ export interface Acabamentos {
   limite_vao_m2?: number;
   alturas_parede?: ParedeAmbiente[];
   vaos?: TipoVao[];
+  alturas_corte?: Record<string, number>; // nome como está no corte → altura do revestimento (m)
 }
 
 /** Parâmetro de altura que aceita "teto"/"laje" (pé-direito − espessura da laje) no lugar de um número. */

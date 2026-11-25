@@ -30,3 +30,37 @@ jobs:
         working-directory: web
       - run: npm test
         working-directory: web
+  navegador:
+    # Abre o site gerado num Chromium e faz o caminho completo (planta + corte) com o Pyodide de verdade.
+    # Pega o que o pytest não pega: erro do GEOS do Pyodide, motor que morre, tela em branco.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - run: scripts/preparar_navegador.sh
+      - run: python scripts/amostras_navegador.py amostras
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --no-audit --no-fund
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: >
+          npm run verificar --
+          --planta ../amostras/planta_sintetica.dxf
+          --corte ../amostras/corte_sintetico.dxf
+          --alturas-do-corte --min-ambientes 5
+          --saida ../verificacao --minutos 15
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verificacao-navegador
+          path: verificacao/
