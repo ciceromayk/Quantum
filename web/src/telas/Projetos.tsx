@@ -37,7 +37,7 @@ export default function Projetos() {
   return (
     <>
       <h1>Empreendimentos</h1>
-      {erro && <p className="erro">{erro}</p>}
+      {erro && <p className="erro" role="alert">{erro}</p>}
       <section className="cartao">
         <h2>Novo empreendimento</h2>
         <form className="form-linha" onSubmit={criar}>
