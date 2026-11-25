@@ -143,3 +143,23 @@ def test_le_altura_de_corte_em_dxf_binario(tmp_path):
     assert binario.read_bytes().startswith(b"AutoCAD Binary DXF")
     alt = ler_alturas_corte(binario)
     assert [(a.ambiente, a.altura_m) for a in alt] == [("BANHO", pytest.approx(2.49))]
+
+
+def test_altura_de_corte_casa_nome_parecido_do_ambiente():
+    """O corte diz "COZ."; a planta diz "COZ. / SERV.": a altura é usada e fica o aviso."""
+    from quantum.agentes.acabamentos import AgenteAcabamentos
+
+    ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COPA": 2.34})
+    assert ag._altura_de_corte("COZ. / SERV.") == 2.49
+    assert ag._altura_de_corte("COPA") == 2.34  # igual continua igual
+    assert ag.aproximados == {"COZ. / SERV.": "COZ."}
+    assert ag._altura_de_corte("QUARTO") is None  # sem parentesco, sem altura
+    assert ag._altura_de_corte("SUÍTE CASAL") is None
+
+
+def test_altura_de_corte_nao_casa_quando_os_parecidos_divergem():
+    from quantum.agentes.acabamentos import AgenteAcabamentos
+
+    ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COZINHA GOURMET": 2.70})
+    assert ag._altura_de_corte("COZ. / SERV.") is None  # dois candidatos, alturas diferentes
+    assert not ag.aproximados
