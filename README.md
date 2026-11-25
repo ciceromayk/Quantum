@@ -183,6 +183,19 @@ scripts/preparar_navegador.sh             # gera as wheels Python em web/public/
 (cd web && npm install && npm run dev)    # http://localhost:5173
 ```
 
+Verificação no navegador (obrigatória antes de mesclar; detalhes em [CLAUDE.md](CLAUDE.md)):
+
+```bash
+(cd web && npm run build && npm run verificar -- --planta PLANTA.dxf --corte CORTE.dxf --saida ../verificacao)
+```
+
+Ela abre o site num Chromium, envia corte e planta, espera a análise, abre todas as abas e falha
+se o motor cair, a tela quebrar ou a planta não desenhar. No CI roda com amostras sintéticas.
+
+A aba **Conferência** da análise lista cada ambiente com a área do rótulo ao lado da área medida,
+a diferença, os códigos de acabamento e a origem do contorno, começando pelos que precisam de
+conferência. Diretrizes de tela: [docs/INTERFACE.md](docs/INTERFACE.md).
+
 A API FastAPI em `src/quantum_api` ([docs/API.md](docs/API.md)) continua no repositório para uso
 em servidor próprio, mas a interface publicada não depende dela.
 

@@ -42,7 +42,7 @@ export default class Falha extends Component<Props, Estado> {
         <main className="conteudo">
           <div className="cartao">
             <h1>Esta tela não abriu</h1>
-            <p className="erro">{erro.message || String(erro)}</p>
+            <p className="erro" role="alert">{erro.message || String(erro)}</p>
             <p className="discreto">
               Os seus dados continuam salvos neste navegador. Recarregue a página; se a tela repetir o erro, volte para a
               lista e use <strong>Reprocessar</strong> na revisão, que refaz a análise com a versão atual.

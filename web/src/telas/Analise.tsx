@@ -1,9 +1,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { aceitaLaje, Acabamentos, Paineis, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
 import Visualizador from "./Visualizador";
+import Conferencia from "./Conferencia";
 import { dataHora, num, SEVERIDADE, STATUS } from "../formato";
 
-type Aba = "pendencias" | "planta" | "quantitativos" | "parametros" | "camadas";
+type Aba = "pendencias" | "conferencia" | "planta" | "quantitativos" | "parametros" | "camadas";
 const ORDEM: Severidade[] = ["bloqueante", "alerta", "info"];
 
 export default function AnaliseTela({ id }: { id: number }) {
@@ -38,9 +39,10 @@ export default function AnaliseTela({ id }: { id: number }) {
     return () => window.clearInterval(t);
   }, [emAndamento, carregar]);
 
-  if (!analise || !pav) return erro ? <p className="erro">{erro}</p> : <p className="discreto">Carregando…</p>;
+  if (!analise || !pav) return erro ? <p className="erro" role="alert">{erro}</p> : <p className="discreto">Carregando…</p>;
   const r = analise.resultado;
   const sev = analise.pendencias_por_severidade;
+  const acab = r?.acabamentos && "ambientes" in r.acabamentos ? (r.acabamentos as Acabamentos) : undefined;
 
   return (
     <>
@@ -71,9 +73,9 @@ export default function AnaliseTela({ id }: { id: number }) {
           </div>
         )}
       </div>
-      {erro && <p className="erro">{erro}</p>}
+      {erro && <p className="erro" role="alert">{erro}</p>}
       {emAndamento && <p className="faixa">{analise.etapa || "Processando o arquivo…"} A página atualiza sozinha.</p>}
-      {analise.status === "erro" && <p className="erro">{analise.erro}</p>}
+      {analise.status === "erro" && <p className="erro" role="alert">{analise.erro}</p>}
 
       {r && (
         <>
@@ -94,23 +96,25 @@ export default function AnaliseTela({ id }: { id: number }) {
             </p>
           )}
 
-          <nav className="abas">
+          <nav className="abas" aria-label="Partes da análise">
             {(
               [
                 ["pendencias", "Pendências"],
+                ...(acab ? ([["conferencia", "Conferência"]] as [Aba, string][]) : []),
                 ["planta", "Planta"],
                 ["quantitativos", "Quantitativos"],
                 ["parametros", "Parâmetros"],
                 ["camadas", "Camadas"],
               ] as [Aba, string][]
             ).map(([k, t]) => (
-              <button key={k} className={aba === k ? "ativa" : ""} onClick={() => setAba(k)}>
+              <button key={k} className={aba === k ? "ativa" : ""} aria-current={aba === k ? "page" : undefined} onClick={() => setAba(k)}>
                 {t}
               </button>
             ))}
           </nav>
 
           {aba === "pendencias" && <Pendencias lista={r.pendencias} />}
+          {aba === "conferencia" && acab && <Conferencia acabamentos={acab} aoVerPlanta={() => setAba("planta")} />}
           {aba === "planta" && <Visualizador analiseId={id} acabamentos={r.acabamentos as Acabamentos | undefined} />}
           {aba === "quantitativos" && <Quantitativos itens={r.itens} />}
           {aba === "parametros" && (
@@ -453,7 +457,7 @@ function ParametrosTela({
           </button>
         </div>
       </form>
-      {erro && <p className="erro">{erro}</p>}
+      {erro && <p className="erro" role="alert">{erro}</p>}
     </section>
   );
 }

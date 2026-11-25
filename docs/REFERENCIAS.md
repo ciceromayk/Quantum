@@ -46,3 +46,15 @@ Quantum; todo o código aqui é próprio.
   pelo conversor comercial da ODA ou removido, voltando a pedir DXF).
 - **Versão fixa:** 0.8.8 falhou ao converter os DWG de teste do LibreDWG; 0.9.1 converteu R14,
   2000, 2004, 2007, 2010, 2013 e 2018.
+
+### Fluxo de trabalho e interface (avaliados em 25/11/2026)
+
+- **obra/superpowers** (MIT): adotadas as ideias de "verificação antes de dizer pronto" e de
+  "teste que falha antes da correção", escritas com as nossas palavras em `CLAUDE.md` e
+  implementadas na verificação no navegador (`web/testes/navegador/verificar.mjs`). Nenhum
+  arquivo copiado.
+- **nextlevelbuilder/ui-ux-pro-max-skill** (MIT): diretrizes de UX usadas como referência para
+  `docs/INTERFACE.md` e a aba Conferência. Nenhum arquivo copiado nem pacote instalado.
+- Não adotados: gsd-build/get-shit-done (MIT, pesado para o projeto), thedotmack/claude-mem
+  (Apache-2.0, exige serviço local e já há memória do projeto) e hesreallyhim/awesome-claude-code
+  (CC BY-NC-ND 4.0: lista que não pode ser copiada nem redistribuída modificada).
