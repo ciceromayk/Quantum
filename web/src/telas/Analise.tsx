@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { aceitaLaje, Acabamentos, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
+import { aceitaLaje, Acabamentos, Paineis, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
 import Visualizador from "./Visualizador";
 import { dataHora, num, SEVERIDADE, STATUS } from "../formato";
 
@@ -114,7 +114,13 @@ export default function AnaliseTela({ id }: { id: number }) {
           {aba === "planta" && <Visualizador analiseId={id} acabamentos={r.acabamentos as Acabamentos | undefined} />}
           {aba === "quantitativos" && <Quantitativos itens={r.itens} />}
           {aba === "parametros" && (
-            <ParametrosTela pav={pav} analiseId={id} aoSalvar={carregar} acabamentos={r.acabamentos as Acabamentos | undefined} />
+            <ParametrosTela
+              pav={pav}
+              analiseId={id}
+              aoSalvar={carregar}
+              acabamentos={r.acabamentos as Acabamentos | undefined}
+              paineis={r.paineis as Paineis | undefined}
+            />
           )}
           {aba === "camadas" && <Camadas itens={r.itens} naoClassificadas={r.camadas_nao_classificadas} />}
         </>
@@ -190,11 +196,13 @@ function ParametrosTela({
   analiseId,
   aoSalvar,
   acabamentos,
+  paineis,
 }: {
   pav: Pavimento;
   analiseId: number;
   aoSalvar: () => void;
   acabamentos?: Acabamentos;
+  paineis?: Paineis;
 }) {
   const [conhecidos, setConhecidos] = useState<Record<string, string>>({});
   const [valores, setValores] = useState<Record<string, string>>(
@@ -221,7 +229,8 @@ function ParametrosTela({
         continue;
       }
       const n = Number(v.replace(",", "."));
-      if (!Number.isFinite(n) || n < 0 || (n === 0 && !k.startsWith("peitoril_vao_"))) {
+      const zeroOk = k.startsWith("peitoril_vao_") || /^vao_.+_peitoril$/.test(k);
+      if (!Number.isFinite(n) || n < 0 || (n === 0 && !zeroOk)) {
         setErro(`Valor inválido para ${conhecidos[k] ?? k}`);
         return;
       }
@@ -239,7 +248,8 @@ function ParametrosTela({
     }
   }
 
-  const proprios = ["altura_parede_", "altura_ambiente_", "altura_vao_", "peitoril_vao_"];
+  const proprios = ["altura_parede_", "altura_ambiente_", "altura_vao_", "peitoril_vao_", "vao_"];
+  const esquadrias = paineis?.esquadrias ?? [];
   const nomes = [...new Set([...Object.keys(conhecidos), ...Object.keys(valores)])].filter(
     (k) => !proprios.some((p) => k.startsWith(p)),
   );
@@ -370,6 +380,33 @@ function ParametrosTela({
             </label>
           );
         })}
+        {esquadrias.length > 0 && (
+          <div className="form-acoes">
+            <h2>Quadro de esquadrias (paredes e painéis)</h2>
+            <p className="faixa">
+              IDs lidos na planta falada. Preencha largura e altura de cada um pelo quadro de esquadrias do projeto: vão com
+              área maior que 2 m² desconta a área total da parede onde está escrito.
+            </p>
+          </div>
+        )}
+        {esquadrias.map((e) => (
+          <label key={e.id}>
+            {e.id}
+            {e.area_m2 != null && <span className="discreto"> · {num(e.area_m2)} m²{e.area_m2 > 2 ? " (desconta)" : " (entra cheio)"}</span>}
+            {(["largura", "altura", "peitoril"] as const).map((campo) => {
+              const k = `vao_${e.id}_${campo}`;
+              return (
+                <input
+                  key={k}
+                  inputMode="decimal"
+                  value={valores[k] ?? ""}
+                  onChange={(ev) => setValores({ ...valores, [k]: ev.target.value })}
+                  placeholder={campo === "peitoril" ? "peitoril (m), opcional" : `${campo} (m)`}
+                />
+              );
+            })}
+          </label>
+        ))}
         {paredes.length > 0 && (
           <div className="form-acoes">
             <h2>Altura por código de parede (opcional)</h2>

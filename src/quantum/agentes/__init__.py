@@ -4,5 +4,6 @@ from .acabamentos import AgenteAcabamentos
 from .auditor import AgenteAuditor
 from .disciplina import AgenteDisciplina
 from .orcamentista import AgenteOrcamentista
+from .paineis import AgentePaineis
 
-__all__ = ["AgenteAcabamentos", "AgenteAuditor", "AgenteDisciplina", "AgenteOrcamentista"]
+__all__ = ["AgenteAcabamentos", "AgenteAuditor", "AgenteDisciplina", "AgenteOrcamentista", "AgentePaineis"]

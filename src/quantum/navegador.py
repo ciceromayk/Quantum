@@ -19,7 +19,7 @@ from .relatorio import para_json, para_markdown, para_xlsx
 
 def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None = None, cortes_json: str = "[]") -> str:
     parametros = {
-        k: (v.strip().lower() if isinstance(v, str) else float(v))
+        k: (v if k.startswith("_") and isinstance(v, str) else v.strip().lower() if isinstance(v, str) else float(v))
         for k, v in json.loads(parametros_json or "{}").items()
         if v is not None and v != ""
     }
