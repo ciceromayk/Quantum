@@ -35,7 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--bdi", type=float, help="BDI em %% (só se informado)")
     a.add_argument("--disciplina", action="append", help="Limita a disciplinas: layout, estrutural, eletrica, hidraulica, acabamentos")
     a.add_argument("--saida", default="saida", help="Pasta de saída (padrão: ./saida)")
-    a.add_argument("--formatos", default="md,xlsx,json,dxf", help="md,xlsx,json,dxf (dxf = polilinhas por acabamento)")
+    a.add_argument("--formatos", default="md,xlsx,json,dxf,falada",
+                   help="md,xlsx,json,dxf,falada (dxf = polilinhas por acabamento; falada = planta falada pré-classificada)")
     args = ap.parse_args(argv)
 
     try:
@@ -70,6 +71,12 @@ def main(argv: list[str] | None = None) -> int:
         n = gerar_dxf_acabamentos(args.arquivo, rel.acabamentos, base.parent / f"{base.name}_acabamentos.dxf")
         if n:
             print(f"DXF de acabamentos: {n} polilinha(s) em {base.name}_acabamentos.dxf", file=sys.stderr)
+    if "falada" in formatos and not (rel.paineis or {}).get("linhas"):
+        from .planta_falada import gerar as gerar_planta_falada
+
+        r = gerar_planta_falada(args.arquivo, base.parent / f"{base.name}_planta_falada.dxf", unidade=args.unidade)
+        if r.get("paredes"):
+            print(f"Planta falada pré-classificada: {r['paredes']} parede(s) em {base.name}_planta_falada.dxf", file=sys.stderr)
     print(md)
     return 0
 

@@ -54,9 +54,29 @@ def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None
                 juntar_geradas(geo, rel.acabamentos)
             except Exception as exc:
                 geo["erro_geradas"] = str(exc)
+    pf_b64, pf_resumo = None, None
+    if not (rel.paineis or {}).get("linhas"):
+        # planta de arquitetura (ainda não é planta falada): gera a planta falada pré-classificada
+        from .planta_falada import gerar as gerar_planta_falada
+
+        destino = os.path.join(tempfile.gettempdir(), os.path.basename(caminho) + ".planta_falada.dxf")
+        try:
+            pf_resumo = gerar_planta_falada(caminho, destino, unidade=unidade or None, desenho=rel.desenho)
+            if pf_resumo.get("paredes"):
+                with open(destino, "rb") as fh:
+                    pf_b64 = base64.b64encode(fh.read()).decode("ascii")
+            else:
+                pf_resumo = None
+        except Exception as exc:  # extra: não derruba a análise
+            pf_resumo = {"erro": str(exc)}
+        finally:
+            if os.path.exists(destino):
+                os.remove(destino)
     return json.dumps(
         {
             "resultado": json.loads(para_json(rel)),
+            "dxf_planta_falada_base64": pf_b64,
+            "planta_falada": pf_resumo,
             "markdown": para_markdown(rel),
             "xlsx_base64": base64.b64encode(buf.getvalue()).decode("ascii"),
             "dxf_acabamentos_base64": dxf_b64,

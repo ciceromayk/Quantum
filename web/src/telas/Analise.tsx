@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { aceitaLaje, Acabamentos, Paineis, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
+import { aceitaLaje, Acabamentos, Paineis, PlantaFalada, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
 import Visualizador from "./Visualizador";
 import Conferencia from "./Conferencia";
 import { dataHora, num, SEVERIDADE, STATUS } from "../formato";
@@ -14,12 +14,14 @@ export default function AnaliseTela({ id }: { id: number }) {
   const [aba, setAba] = useState<Aba>("pendencias");
   const [erro, setErro] = useState("");
   const [temDxf, setTemDxf] = useState(false);
+  const [falada, setFalada] = useState<PlantaFalada | null>(null);
 
   const carregar = useCallback(async () => {
     try {
       const a = await api.analise(id);
       setAnalise(a);
       setTemDxf(await api.temDxfAcabamentos(id));
+      setFalada(await api.plantaFalada(id));
       const p = await api.pavimento(a.pavimento_id);
       setPav(p);
       const proj = await api.projeto(p.projeto_id);
@@ -70,12 +72,46 @@ export default function AnaliseTela({ id }: { id: number }) {
                 Baixar DXF de acabamentos
               </button>
             )}
+            {falada && (
+              <button className="botao secundario" onClick={() => api.baixarRelatorio(id, "falada").catch((e) => setErro(e.message))}>
+                Baixar planta falada (DXF)
+              </button>
+            )}
           </div>
         )}
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {emAndamento && <p className="faixa">{analise.etapa || "Processando o arquivo…"} A página atualiza sozinha.</p>}
       {analise.status === "erro" && <p className="erro" role="alert">{analise.erro}</p>}
+      {falada && analise.status === "concluida" && (
+        <details className="cartao">
+          <summary>
+            Planta falada pré-classificada: {falada.paredes} paredes ({falada.por_sistema.reduce((s, x) => s + x.inferidos, 0)} com
+            classificação inferida, marcadas na camada QUANTUM_INFERIDO)
+          </summary>
+          <p className="discreto">{falada.aviso} Corrija a camada de cada parede no CAD, apague as marcas e envie a planta falada como nova revisão para gerar a planilha padrão.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Sistema</th>
+                <th>Comprimento (m)</th>
+                <th>Trechos</th>
+                <th>Inferidos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {falada.por_sistema.map((x) => (
+                <tr key={x.especificacao}>
+                  <td>{x.especificacao}</td>
+                  <td>{num(x.comprimento_m)}</td>
+                  <td>{x.trechos}</td>
+                  <td>{x.inferidos}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
 
       {r && (
         <>

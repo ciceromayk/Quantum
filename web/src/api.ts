@@ -174,7 +174,17 @@ interface RelatorioReg {
   markdown: string;
   xlsx_base64: string;
   dxf_acabamentos_base64?: string | null;
+  dxf_planta_falada_base64?: string | null;
+  planta_falada?: PlantaFalada | { erro: string } | null;
   geometria?: Geometria | { erro: string } | null;
+}
+
+/** Planta falada pré-classificada gerada da arquitetura. */
+export interface PlantaFalada {
+  paredes: number;
+  rotulos: number;
+  aviso: string;
+  por_sistema: { especificacao: string; comprimento_m: number; trechos: number; inferidos: number }[];
 }
 
 /** Desenho do Model simplificado para o visualizador (metros). */
@@ -501,6 +511,12 @@ export const api = {
 
   temDxfAcabamentos: async (id: number) => !!(await banco.obter<RelatorioReg>("relatorios", id))?.dxf_acabamentos_base64,
 
+  plantaFalada: async (id: number): Promise<PlantaFalada | null> => {
+    const r = await banco.obter<RelatorioReg>("relatorios", id);
+    const pf = r?.planta_falada;
+    return r?.dxf_planta_falada_base64 && pf && !("erro" in pf) ? pf : null;
+  },
+
   /** Cortes valem para as próximas análises do pavimento (use Reprocessar nas anteriores). */
   enviarCorte: async (pavimentoId: number, arquivo: File, aoProgredir?: (etapa: string) => void) => {
     exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
@@ -566,10 +582,14 @@ export const api = {
     return api.analise(id);
   },
 
-  baixarRelatorio: async (id: number, formato: "xlsx" | "md" | "dxf") => {
+  baixarRelatorio: async (id: number, formato: "xlsx" | "md" | "dxf" | "falada") => {
     const a = exigir(await banco.obter<AnaliseReg>("analises", id), "Análise");
     const rel = exigir(await banco.obter<RelatorioReg>("relatorios", id), "Relatório");
-    if (formato === "dxf") {
+    if (formato === "falada") {
+      if (!rel.dxf_planta_falada_base64) throw new Error("A planta falada não foi gerada para este desenho.");
+      const bytes = Uint8Array.from(atob(rel.dxf_planta_falada_base64), (c) => c.charCodeAt(0));
+      baixar(`${nomeBase(a)}_planta_falada.dxf`, new Blob([bytes], { type: "application/dxf" }));
+    } else if (formato === "dxf") {
       if (!rel.dxf_acabamentos_base64) throw new Error("Nenhum ambiente com contorno: o DXF de acabamentos não foi gerado.");
       const bytes = Uint8Array.from(atob(rel.dxf_acabamentos_base64), (c) => c.charCodeAt(0));
       baixar(`${nomeBase(a)}_acabamentos.dxf`, new Blob([bytes], { type: "application/dxf" }));
@@ -590,7 +610,7 @@ export const api = {
     for (const a of analises) {
       const r = await banco.obter<RelatorioReg>("relatorios", a.id);
       // o DXF gerado é grande e sai de novo ao reprocessar: não vai no backup
-      relatorios[a.id] = r && { ...r, dxf_acabamentos_base64: null, geometria: null };
+      relatorios[a.id] = r && { ...r, dxf_acabamentos_base64: null, dxf_planta_falada_base64: null, geometria: null };
     }
     const dados = { formato: "quantum-projeto", versao: 1, exportado_em: agora(), aviso: AVISO, projeto: p, pavimentos: pavs, analises, relatorios };
     baixar(`${p.nome.replace(/[^\w\-À-ú ]+/g, "_")}.quantum.json`, new Blob([JSON.stringify(dados)], { type: "application/json" }));
