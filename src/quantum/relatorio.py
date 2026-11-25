@@ -68,7 +68,7 @@ def para_markdown(rel: Relatorio) -> str:
     paredes = (rel.acabamentos or {}).get("alturas_parede") or []
     if paredes:
         L += ["", "### Revestimento de parede por ambiente", "",
-              "Altura usada em cada ambiente e vãos descontados (só os acima de 2 m²).", "",
+              "Altura usada em cada ambiente e desconto dos vãos (só a parte que excede 2 m² em cada vão).", "",
               "| Ambiente | Parede | Altura (m) | Origem da altura | Perímetro (m) | Bruta (m²) | Vãos descontados (m²) | Líquida (m²) |",
               "|---|---|---:|---|---:|---:|---:|---:|"]
         for a in paredes:
@@ -163,7 +163,7 @@ def para_xlsx(rel: Relatorio, caminho: str | Path) -> None:
             w.append([x["nome"], x["codigo"], x["altura_m"], x["origem_altura"] or "não informada", x["perimetro_m"],
                       x["area_bruta_m2"], x["desconto_vaos_m2"], x["area_liquida_m2"], vaos])
         w.append([])
-        w.append(["Só vãos de porta e janela com área acima de 2 m² são descontados. Sem perdas."])
+        w.append(["Dos vãos de porta e janela só se desconta a parte que excede 2 m² (TCPO/SINAPI). Sem perdas."])
 
     for folha in wb.worksheets[1:]:
         for c in folha[1]:

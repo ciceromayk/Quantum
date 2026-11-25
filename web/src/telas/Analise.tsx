@@ -338,8 +338,8 @@ function ParametrosTela({
           <div className="form-acoes">
             <h2>Vãos de portas e janelas</h2>
             <p className="faixa">
-              Só vãos com área acima de {num(limite)} m² são descontados do revestimento; os de até {num(limite)} m² entram
-              cheios. A planta não traz a altura das esquadrias: preencha pelo quadro de esquadrias. Largura medida no
+              De cada vão só se desconta do revestimento a parte que excede {num(limite)} m² (TCPO/SINAPI); os de até{" "}
+              {num(limite)} m² entram cheios. A planta não traz a altura das esquadrias: preencha pelo quadro de esquadrias. Largura medida no
               bloco, dentro da parede. Vão que nem com a altura máxima ({pml != null ? `${num(pml)} m` : "pé-direito − laje"}) passa
               de {num(limite)} m² não precisa de altura.
             </p>

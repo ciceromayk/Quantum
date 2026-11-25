@@ -30,13 +30,13 @@ DISC = "acabamentos"
 TIPOS = ("piso", "parede", "teto", "rodape")
 NOME_TIPO = {"piso": "Piso", "parede": "Parede", "teto": "Teto", "rodape": "Rodapé"}
 RX_CODIGO = re.compile(r"\d{2}")
-LIMITE_VAO_M2 = 2.0  # vão de porta/janela só é descontado se a área passar disso
+LIMITE_VAO_M2 = 2.0  # do vão de porta/janela só se desconta o que passa disso (critério TCPO/SINAPI)
 
 AVISO_ALTURAS = (
     "Alturas de revestimento de parede tiradas de cortes valem só para os ambientes que aparecem "
     "cortados e precisam de conferência. Ambientes fora dos cortes ficam como pendência até a "
     "altura ser informada. A opção 'pé-direito − laje' usa o pé-direito descontada a espessura da laje. "
-    "Vãos de porta e janela só são descontados quando a área do vão passa de 2 m². Nenhuma perda é aplicada."
+    "Dos vãos de porta e janela só se desconta a parte que excede 2 m². Nenhuma perda é aplicada."
 )
 
 
@@ -430,7 +430,8 @@ class AgenteAcabamentos:
     def _desconto_vao(self, v: detector.Vao, f: float, h_parede: float) -> tuple[str, float | None, float | None]:
         """(situação, área do vão, desconto) de um vão numa parede revestida até `h_parede`.
 
-        Regra: só vão com área ACIMA de 2 m² é descontado; até 2 m² entra cheio. A altura (e o
+        Regra (TCPO/SINAPI): do vão só se desconta a parte que EXCEDE 2 m²; até 2 m² entra cheio.
+        O desconto também não passa da parte do vão dentro da faixa revestida. A altura (e o
         peitoril, na janela) não está na planta: vem de Parâmetros. Sem ela, o vão só dispensa
         a altura quando nem com a altura máxima possível (pé-direito − laje) passa de 2 m²."""
         chave = self._chave_vao(v, f)
@@ -445,11 +446,11 @@ class AgenteAcabamentos:
         if area <= LIMITE_VAO_M2:
             return "cheio", area, 0.0
         if v.tipo == "porta":
-            return "descontado", area, w * min(alt, h_parede)
+            return "descontado", area, min(w * min(alt, h_parede), area - LIMITE_VAO_M2)
         peit = self._valor_altura(self.par.get(f"peitoril_vao_{chave}"))
         if peit is None:
             return "sem_peitoril", area, None
-        return "descontado", area, w * max(0.0, min(h_parede, peit + alt) - peit)
+        return "descontado", area, min(w * max(0.0, min(h_parede, peit + alt) - peit), area - LIMITE_VAO_M2)
 
     def _resumo_vaos(self) -> list[dict]:
         """Tipos de vão (tipo + largura) que abrem para paredes revestidas, para o quadro em Parâmetros."""
@@ -554,8 +555,8 @@ class AgenteAcabamentos:
                     acao_sugerida="Informe a altura de cada ambiente em Parâmetros (ou marque 'pé-direito − laje'), "
                                   "ou envie um corte que passe por eles.",
                 ))
-            obs = (f"{len(amb)} ambiente(s). Perímetro do contorno × altura, menos os vãos de porta e janela acima de "
-                   f"2 m² ({n_desc} descontado(s), {_m2(area_desc)}); vãos de até 2 m² entram cheios ({n_cheios}). Sem perdas.")
+            obs = (f"{len(amb)} ambiente(s). Perímetro do contorno × altura, menos o que excede 2 m² nos vãos de "
+                   f"porta e janela ({n_desc} vão(s), {_m2(area_desc)} descontados); vãos de até 2 m² entram cheios ({n_cheios}). Sem perdas.")
             if len(medidos) < len(amb):
                 obs = f"{len(amb) - len(medidos)} de {len(amb)} ambiente(s) sem contorno: área não medida."
             usadas = sorted({(a.nome, alturas[a.handle][0], alturas[a.handle][1]) for a in amb if a.handle in alturas})
@@ -588,8 +589,8 @@ class AgenteAcabamentos:
                 return f"{nome} {_m(g['largura_m'])} × {len(g['n'])} ({o_que})"
             pend.append(Pendencia(
                 DISC, Severidade.BLOQUEANTE,
-                "Vãos sem altura informada (a planta não tem a altura das esquadrias, e só vãos acima de 2 m² são "
-                "descontados): " + ", ".join(desc_g(c, g) for c, g in sorted(faltam_vao.items())) + ".",
+                "Vãos sem altura informada (a planta não tem a altura das esquadrias, e do vão só se desconta o que "
+                "excede 2 m²): " + ", ".join(desc_g(c, g) for c, g in sorted(faltam_vao.items())) + ".",
                 acao_sugerida="Informe altura (e peitoril, nas janelas) de cada tipo de vão em Parâmetros > Vãos, "
                               "conforme o quadro de esquadrias.",
             ))
