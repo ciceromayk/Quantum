@@ -3,6 +3,7 @@
 import ezdxf
 import pytest
 
+from quantum.agentes.acabamentos import AgenteAcabamentos
 from quantum.dxf_acabamentos import gerar_dxf_acabamentos
 from quantum.orquestrador import analisar
 
@@ -163,3 +164,17 @@ def test_altura_de_corte_nao_casa_quando_os_parecidos_divergem():
     ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COZINHA GOURMET": 2.70})
     assert ag._altura_de_corte("COZ. / SERV.") is None  # dois candidatos, alturas diferentes
     assert not ag.aproximados
+
+
+def test_nomes_de_corte_equivalentes_com_alturas_diferentes_nao_sao_usados():
+    """"COZ." e "COZ" viram a mesma chave: com alturas diferentes, nenhuma vale."""
+    ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COZ": 2.60})
+    assert ag.alturas_corte == {}
+    assert ag._altura_de_corte("COZ. / SERV.") is None
+    assert "COZINHA" in ag.conflitos or "COZ" in ag.conflitos
+
+
+def test_nomes_de_corte_equivalentes_com_a_mesma_altura_valem():
+    ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COZ": 2.49})
+    assert ag.conflitos == {}
+    assert ag._altura_de_corte("COZ") == 2.49
