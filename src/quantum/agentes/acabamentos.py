@@ -77,6 +77,10 @@ def _mesmo_pedaco(a: str, b: str) -> bool:
     return len(curto) >= 3 and longo.startswith(curto)
 
 
+def _m(v: float) -> str:
+    return f"{v:.2f}".replace(".", ",") + " m"
+
+
 def _m2(v: float) -> str:
     return f"{v:.2f}".replace(".", ",") + " m²"
 
@@ -89,8 +93,15 @@ class AgenteAcabamentos:
     def __init__(self, config: dict, parametros: dict | None = None, alturas_corte: dict[str, float] | None = None):
         self.cfg = config or {}
         self.par = parametros or {}
-        # nome do ambiente (normalizado) -> (altura em m lida no corte, nome como está no corte)
-        self.alturas_corte = {_chave(k): (v, k) for k, v in (alturas_corte or {}).items()}
+        # nome do ambiente (normalizado) -> (altura em m lida no corte, nome como está no corte).
+        # Dois nomes do corte podem virar a mesma chave ("COZ." e "COZ"): se as alturas divergem,
+        # nenhuma é usada, porque não dá para saber qual é a do ambiente.
+        juntos: dict[str, list[tuple[float, str]]] = {}
+        for k, v in (alturas_corte or {}).items():
+            juntos.setdefault(_chave(k), []).append((v, k))
+        uma_altura = lambda v: len({round(h, 3) for h, _ in v}) == 1
+        self.alturas_corte = {c: sorted(v)[0] for c, v in juntos.items() if uma_altura(v)}
+        self.conflitos = {c: sorted(v) for c, v in juntos.items() if not uma_altura(v)}
         self.aproximados: dict[str, str] = {}  # ambiente da planta -> nome do corte usado
         self.posicoes: dict[str, str] = self.cfg.get("etiqueta") or {}
         self.dist_max_m = float(self.cfg.get("distancia_max_etiqueta_m", 1.0))
@@ -219,6 +230,13 @@ class AgenteAcabamentos:
             itens += self._areas(tipo, ambientes, catalogo)
         itens += self._paredes(ambientes, catalogo, pend)
 
+        for achados in self.conflitos.values():
+            nomes = ", ".join(f"{bruto} ({_m(h)})" for h, bruto in achados)
+            pend.append(Pendencia(
+                DISC, Severidade.ALERTA,
+                f"Nomes de corte equivalentes com alturas diferentes: {nomes}. Nenhuma foi usada.",
+                acao_sugerida="Use o mesmo nome e a mesma altura no corte, ou informe a altura em Parâmetros.",
+            ))
         if self.aproximados:
             pares = ", ".join(f"{amb} ← {corte}" for amb, corte in sorted(self.aproximados.items())[:10])
             pend.append(Pendencia(
