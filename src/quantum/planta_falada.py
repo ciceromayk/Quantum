@@ -30,7 +30,8 @@ from pathlib import Path
 import ezdxf
 from shapely.ops import voronoi_diagram
 from shapely.geometry import LineString, MultiPoint, Point, Polygon
-from shapely.ops import linemerge, unary_union
+from shapely import set_precision, union_all
+from shapely.ops import linemerge
 from shapely.strtree import STRtree
 
 from .agentes.paineis import CAMADAS_PADRAO, NAO_NOME, RX_ID_VAO, _chave
@@ -62,6 +63,8 @@ COR_DA_ESPEC = {  # cores ACI da planta falada padrão
 CAMADA_A_CLASSIFICAR = "0_A_CLASSIFICAR"
 CAMADA_INFERIDO = "QUANTUM_INFERIDO"
 CAMADA_LEGENDA = "QUADRO DE ALVENARIAS"
+
+GRADE = 0.001  # m: grade de precisão das operações de geometria
 
 PADRAO = {
     "camadas_alvenaria": ["ALVENARIA"],
@@ -168,15 +171,19 @@ def _regiao(segs, emin: float, emax: float):
             quads.append(Polygon([p1, p2, (p2[0] + nx * dd, p2[1] + ny * dd), (p1[0] + nx * dd, p1[1] + ny * dd)]))
     if not quads:
         return None
-    r = unary_union([q.buffer(0.003, join_style=2) for q in quads]).buffer(-0.002, join_style=2)
+    # grade de precisão em toda união/buffer: o GEOS do Pyodide aborta o processo num
+    # "non-noded intersection" (ver CLAUDE.md e PR #19)
+    r = union_all([set_precision(q.buffer(0.003, join_style=2), GRADE) for q in quads], grid_size=GRADE)
+    r = set_precision(r.buffer(-0.002, join_style=2), GRADE)
     # sobra de faixa mais fina que a parede mais fina (ex.: só a chapa) não é parede
-    return r.buffer(-emin / 2.2, join_style=2).buffer(emin / 2.2, join_style=2)
+    r = set_precision(r.buffer(-emin / 2.2, join_style=2), GRADE)
+    return set_precision(r.buffer(emin / 2.2, join_style=2), GRADE)
 
 
 def _juntar(linhas) -> list[LineString]:
     if not linhas:
         return []
-    u = unary_union(linhas)
+    u = union_all(linhas, grid_size=GRADE)
     if u.geom_type == "LineString":
         return [u]
     m = linemerge(u) if u.geom_type == "MultiLineString" else u
@@ -192,7 +199,7 @@ def _eixos(regiao, emin: float, emax: float, comp_min: float) -> list[tuple[list
         borda = pg.boundary.segmentize(0.03)
         pts = MultiPoint([c for ln in getattr(borda, "geoms", [borda]) for c in ln.coords])
         vor = voronoi_diagram(pts, edges=True)
-        miolo = pg.buffer(-emin * 0.3)
+        miolo = set_precision(pg.buffer(-emin * 0.3), GRADE)
         def planas(g):
             for x in getattr(g, "geoms", [g]):
                 if x.geom_type == "LineString":
@@ -257,9 +264,16 @@ def _nucleo(material: str, pontos, segs, arvore, emax: float) -> float | None:
             L = math.dist(p1, p2)
             if abs(ux * (p2[1] - p1[1]) / L - uy * (p2[0] - p1[0]) / L) > 0.035:
                 continue
-            x = sonda.intersection(LineString([p1, p2]))
-            if x.geom_type == "Point":
-                offs.append((x.x - c.x) * -uy + (x.y - c.y) * ux)
+            # cruzamento sonda × face pela conta (sem overlay do GEOS)
+            q0, q1 = sonda.coords[0], sonda.coords[1]
+            den = (q1[0] - q0[0]) * (p2[1] - p1[1]) - (q1[1] - q0[1]) * (p2[0] - p1[0])
+            if abs(den) < 1e-12:
+                continue
+            ta = ((p1[0] - q0[0]) * (p2[1] - p1[1]) - (p1[1] - q0[1]) * (p2[0] - p1[0])) / den
+            tb = ((p1[0] - q0[0]) * (q1[1] - q0[1]) - (p1[1] - q0[1]) * (q1[0] - q0[0])) / den
+            if 0 <= ta <= 1 and 0 <= tb <= 1:
+                x, y = q0[0] + ta * (q1[0] - q0[0]), q0[1] + ta * (q1[1] - q0[1])
+                offs.append((x - c.x) * -uy + (y - c.y) * ux)
         achados = set()
         for i in range(len(offs)):
             for j in range(i + 1, len(offs)):
@@ -401,7 +415,7 @@ def detectar_paredes(caminho: str | Path, config: dict | None = None, unidade: s
         arv = STRtree([LineString(x) for x in segs])
         for pts, esp in _eixos(r, emin, emax, cmin):
             paredes.append(Parede(pts, material, esp, _nucleo(material, pts, segs, arv, emax)))
-    uniao = unary_union(regioes) if regioes else Polygon()
+    uniao = union_all(regioes, grid_size=GRADE) if regioes else Polygon()
     rotulos = _rotulos(d, f)
     arvore = STRtree([Point(r[1]) for r in rotulos]) if rotulos else None
     for p in paredes:
