@@ -13,7 +13,7 @@
 //
 // Saída: capturas de tela de cada aba e resultado.json na pasta --saida. Código de saída 1 se falhar.
 
-import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -180,6 +180,25 @@ async function main() {
       if (o.alturasDoCorte && !lidas) falhas.push("Nenhuma altura foi lida dos cortes enviados.");
     }
 
+    // planta falada: o botão tem de entregar um DXF de verdade (não só aparecer)
+    const botaoFalada = pagina.getByRole("button", { name: "Baixar planta falada (DXF)" });
+    if (await botaoFalada.count()) {
+      try {
+        const [baixado] = await Promise.all([pagina.waitForEvent("download", { timeout: 120_000 }), botaoFalada.click()]);
+        const destino = join(o.saida, "planta_falada.dxf");
+        await baixado.saveAs(destino);
+        const tamanho = statSync(destino).size;
+        const cabeca = readFileSync(destino, { encoding: "latin1" }).slice(0, 2000);
+        resultado.planta_falada = { bytes: tamanho, camadas_0: (readFileSync(destino, "latin1").match(/\n0_[A-Z]/g) || []).length };
+        if (tamanho < 1000 || !/SECTION/.test(cabeca)) falhas.push(`Planta falada baixada vazia ou inválida (${tamanho} bytes).`);
+        else etapa(`planta falada baixada (${Math.round(tamanho / 1024)} kB)`);
+      } catch (e) {
+        falhas.push(`O botão "Baixar planta falada (DXF)" não entregou o arquivo: ${e.message.slice(0, 200)}`);
+      }
+      const erroTela = await pagina.locator("p.erro").first().textContent().catch(() => null);
+      if (erroTela) falhas.push(`Erro na tela ao baixar a planta falada: ${erroTela}`);
+    }
+
     const abas = await pagina.locator("nav.abas button").allTextContents();
     for (const [i, nome] of abas.entries()) {
       await pagina.locator("nav.abas button", { hasText: nome }).click();
@@ -199,6 +218,8 @@ async function main() {
         const pintar = await pagina.getByText(/Pintar os ambientes \(\d+ de \d+\)/).textContent().catch(() => null);
         const m = pintar?.match(/\((\d+) de (\d+)\)/);
         if (m) resultado.ambientes = { com_contorno: Number(m[1]), total: Number(m[2]) };
+        if (resultado.planta_falada && !(await pagina.getByText(/Planta falada \(\d+ camadas\)/).count()))
+          falhas.push("A aba Planta não mostra as camadas da planta falada.");
       }
       if (nome === "Conferência") {
         resultado.conferencia = (await pagina.locator(".conferencia-resumo").textContent().catch(() => ""))?.replace(/\s+/g, " ").trim();

@@ -61,10 +61,18 @@ def processar_dxf(caminho: str, parametros_json: str = "{}", unidade: str | None
 
         destino = os.path.join(tempfile.gettempdir(), os.path.basename(caminho) + ".planta_falada.dxf")
         try:
-            pf_resumo = gerar_planta_falada(caminho, destino, unidade=unidade or None, desenho=rel.desenho)
+            paredes: list = []
+            pf_resumo = gerar_planta_falada(caminho, destino, unidade=unidade or None, desenho=rel.desenho, paredes_out=paredes)
             if pf_resumo.get("paredes"):
                 with open(destino, "rb") as fh:
                     pf_b64 = base64.b64encode(fh.read()).decode("ascii")
+                if isinstance(geo, dict) and "erro" not in geo:
+                    from .visualizacao import juntar_planta_falada
+
+                    try:  # os eixos aparecem na aba Planta, uma camada por sistema
+                        juntar_planta_falada(geo, paredes)
+                    except Exception as exc:
+                        geo["erro_falada"] = str(exc)
             else:
                 pf_resumo = None
         except Exception as exc:  # extra: não derruba a análise

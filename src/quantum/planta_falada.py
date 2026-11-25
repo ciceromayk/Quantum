@@ -498,8 +498,11 @@ def resumo_paredes(paredes: list[Parede]) -> list[dict]:
 
 
 def gerar(caminho: str | Path, saida: str | Path, config: dict | None = None, unidade: str | None = None,
-          desenho=None) -> dict:
+          desenho=None, paredes_out: list | None = None) -> dict:
+    """`paredes_out`: lista que recebe as paredes detectadas (para o visualizador)."""
     paredes, info = detectar_paredes(caminho, config, unidade, desenho)
+    if paredes_out is not None:
+        paredes_out.extend(paredes)
     msp = getattr(desenho, "modelspace", None)
     gravar(caminho, paredes, saida, info["fator_m"], msp.doc if msp is not None else None)
     baixas = [{"texto": p.texto_altura, "altura_m": p.altura_texto, "comprimento_m": round(p.comprimento_m, 2),

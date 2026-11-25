@@ -200,6 +200,7 @@ export interface Geometria {
   fator_m: number;
   geradas?: string[]; // camadas das polilinhas de acabamento geradas (QTD-*)
   largura_gerada?: number; // espessura delas, em metros
+  falada?: string[]; // camadas dos eixos da planta falada pré-classificada (0_<SISTEMA>)
 }
 
 export const AVISO =
@@ -418,7 +419,17 @@ function baixar(nome: string, conteudo: Blob) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // arquivo grande (a planta falada passa de 10 MB): o navegador lê o blob depois do clique, e
+  // liberar o endereço cedo demais cancela o download
+  setTimeout(() => URL.revokeObjectURL(url), 120_000);
+}
+
+/** Base64 -> bytes em blocos (o Uint8Array.from com função por caractere trava em arquivo grande). */
+function deBase64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 // --- exclusão ------------------------------------------------------------------------------
@@ -589,12 +600,10 @@ export const api = {
     const rel = exigir(await banco.obter<RelatorioReg>("relatorios", id), "Relatório");
     if (formato === "falada") {
       if (!rel.dxf_planta_falada_base64) throw new Error("A planta falada não foi gerada para este desenho.");
-      const bytes = Uint8Array.from(atob(rel.dxf_planta_falada_base64), (c) => c.charCodeAt(0));
-      baixar(`${nomeBase(a)}_planta_falada.dxf`, new Blob([bytes], { type: "application/dxf" }));
+      baixar(`${nomeBase(a)}_planta_falada.dxf`, new Blob([deBase64(rel.dxf_planta_falada_base64)], { type: "application/octet-stream" }));
     } else if (formato === "dxf") {
       if (!rel.dxf_acabamentos_base64) throw new Error("Nenhum ambiente com contorno: o DXF de acabamentos não foi gerado.");
-      const bytes = Uint8Array.from(atob(rel.dxf_acabamentos_base64), (c) => c.charCodeAt(0));
-      baixar(`${nomeBase(a)}_acabamentos.dxf`, new Blob([bytes], { type: "application/dxf" }));
+      baixar(`${nomeBase(a)}_acabamentos.dxf`, new Blob([deBase64(rel.dxf_acabamentos_base64)], { type: "application/octet-stream" }));
     } else if (formato === "md") {
       baixar(`${nomeBase(a)}.md`, new Blob([rel.markdown], { type: "text/markdown;charset=utf-8" }));
     } else {

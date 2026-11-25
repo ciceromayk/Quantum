@@ -58,7 +58,10 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
   const arrastou = useRef(false);
 
   const f = geo.fator_m || 1;
-  const geradas = useMemo(() => geo.geradas ?? [], [geo]);
+  const falada = useMemo(() => geo.falada ?? [], [geo]);
+  // a planta falada é desenhada como as polilinhas geradas (grossa, por cima)
+  const geradas = useMemo(() => [...(geo.geradas ?? []), ...falada], [geo, falada]);
+  const soAcabamentos = useMemo(() => geradas.filter((n) => !falada.includes(n)), [geradas, falada]);
   const nomes = useMemo(
     () => Object.keys(geo.camadas).filter((n) => !geradas.includes(n)).sort(),
     [geo, geradas],
@@ -281,14 +284,24 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
         <label className="marcar">
           <input type="checkbox" checked={verTextos} onChange={(e) => setVerTextos(e.target.checked)} /> Textos
         </label>
-        {geradas.length > 0 && (
+        {soAcabamentos.length > 0 && (
           <label className="marcar">
             <input
               type="checkbox"
-              checked={geradas.some((n) => !ocultas.has(n))}
-              onChange={(e) => mostrarGrupo(geradas, e.target.checked)}
+              checked={soAcabamentos.some((n) => !ocultas.has(n))}
+              onChange={(e) => mostrarGrupo(soAcabamentos, e.target.checked)}
             />{" "}
-            Polilinhas geradas ({geradas.length} camadas)
+            Polilinhas geradas ({soAcabamentos.length} camadas)
+          </label>
+        )}
+        {falada.length > 0 && (
+          <label className="marcar">
+            <input
+              type="checkbox"
+              checked={falada.some((n) => !ocultas.has(n))}
+              onChange={(e) => mostrarGrupo(falada, e.target.checked)}
+            />{" "}
+            Planta falada ({falada.length} camadas)
           </label>
         )}
         {total > 0 && (
@@ -326,21 +339,29 @@ function Tela({ geo, acabamentos }: { geo: Geometria; acabamentos?: Acabamentos 
           )}
         </div>
         <ul className="vis-camadas">
-          {geradas.length > 0 && (
+          {soAcabamentos.length > 0 && (
             <>
               <li className="vis-grupo">Acabamentos (geradas)</li>
-              {geradas.map(lista)}
-              <li className="vis-grupo">Do arquivo</li>
+              {soAcabamentos.map(lista)}
             </>
           )}
+          {falada.length > 0 && (
+            <>
+              <li className="vis-grupo">Planta falada (pré-classificada)</li>
+              {falada.map(lista)}
+            </>
+          )}
+          {geradas.length > 0 && <li className="vis-grupo">Do arquivo</li>}
           {nomes.map(lista)}
         </ul>
       </div>
       <p className="discreto pequeno">
         Só o Model do arquivo (pranchas e layouts não entram). Arraste para mover, use a roda do mouse ou a pinça para aproximar, clique
         num ambiente para ver os dados.
-        {geradas.length > 0 &&
+        {soAcabamentos.length > 0 &&
           " As camadas QTD-* são as polilinhas geradas, as mesmas do DXF que se baixa: piso e teto fechados, parede só nos trechos colados à parede."}
+        {falada.length > 0 &&
+          " As camadas 0_* são os eixos da planta falada pré-classificada, as mesmas do DXF da planta falada: sistema inferido, a conferir; 0_A_CLASSIFICAR são as paredes de espessura fora do padrão."}
         {verAmbientes && total > 0 && " Verde: contorno detectado; azul: separado por projeção; laranja: divisa proposta, a conferir."}
         {geo.cortado && " Desenho muito grande: parte das linhas não foi mostrada (os quantitativos usam o arquivo inteiro)."}
       </p>
