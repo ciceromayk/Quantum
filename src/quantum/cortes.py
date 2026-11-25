@@ -96,6 +96,7 @@ def ler_alturas_corte(
     tol = 0.02 / fator_m
 
     rev, lajes, textos = [], [], []
+    sem_nome: list[float] = []
     for e in _entidades(caminho):
         t = e.dxftype()
         if t == "HATCH":
@@ -138,6 +139,10 @@ def ler_alturas_corte(
             topo = min(cobre)
         nomes = [t for t in textos if x0 - 0.3 / fator_m <= t[1] <= x1 + 0.3 / fator_m and base <= t[2] <= topo]
         if not nomes:
+            # pilha de revestimento sem nome de ambiente dentro dela: não dá para dizer de que
+            # ambiente é (o texto mais próximo costuma ser do pavimento de baixo), então fica
+            # registrada para virar pendência em vez de sumir sem explicação
+            sem_nome.append(round((topo - base) * fator_m, 3))
             continue
         nomes.sort(key=lambda t: abs(t[1] - (x0 + x1) / 2))
         faixas = sorted((q[1][1], min(q[1][3], topo)) for q in p if q[1][1] < topo)
@@ -151,4 +156,5 @@ def ler_alturas_corte(
             x_max=x1,
             interrupcoes=[(round(a, 3), round(b, 3)) for a, b in vaos],
         ))
+    ler_alturas_corte.sem_nome = sem_nome  # último arquivo lido, para o aviso ao usuário
     return out

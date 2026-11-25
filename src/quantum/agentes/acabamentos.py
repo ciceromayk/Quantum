@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from .. import ambientes as detector
@@ -54,7 +55,26 @@ class Ambiente:
 
 
 def _chave(nome: str) -> str:
-    return re.sub(r"\s+", " ", nome).strip().upper()
+    """Nome comparável: sem acento, sem ponto, maiúsculo e com um espaço só."""
+    nome = unicodedata.normalize("NFKD", str(nome))
+    nome = "".join(c for c in nome if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", nome.replace(".", " ")).strip().upper()
+
+
+def _partes(nome: str) -> list[str]:
+    """Pedaços do nome, separados por barra: "COZ. / SERV." vira ["COZ", "SERV"].
+
+    Só a barra separa: espaço não, senão "SUÍTE CASAL" casaria com "SUÍTE REV.".
+    """
+    return [t for t in (x.strip() for x in _chave(nome).split("/")) if t]
+
+
+def _mesmo_pedaco(a: str, b: str) -> bool:
+    """Dois pedaços de nome falam do mesmo ambiente (um é abreviação do outro)."""
+    if a == b:
+        return True
+    curto, longo = sorted((a, b), key=len)
+    return len(curto) >= 3 and longo.startswith(curto)
 
 
 def _m2(v: float) -> str:
@@ -69,8 +89,9 @@ class AgenteAcabamentos:
     def __init__(self, config: dict, parametros: dict | None = None, alturas_corte: dict[str, float] | None = None):
         self.cfg = config or {}
         self.par = parametros or {}
-        # nome do ambiente (normalizado) -> altura de revestimento lida em corte, em m
-        self.alturas_corte = {_chave(k): v for k, v in (alturas_corte or {}).items()}
+        # nome do ambiente (normalizado) -> (altura em m lida no corte, nome como está no corte)
+        self.alturas_corte = {_chave(k): (v, k) for k, v in (alturas_corte or {}).items()}
+        self.aproximados: dict[str, str] = {}  # ambiente da planta -> nome do corte usado
         self.posicoes: dict[str, str] = self.cfg.get("etiqueta") or {}
         self.dist_max_m = float(self.cfg.get("distancia_max_etiqueta_m", 1.0))
         self.tol_area = float(self.cfg.get("tolerancia_area_contorno", 0.05))
@@ -198,6 +219,13 @@ class AgenteAcabamentos:
             itens += self._areas(tipo, ambientes, catalogo)
         itens += self._paredes(ambientes, catalogo, pend)
 
+        if self.aproximados:
+            pares = ", ".join(f"{amb} ← {corte}" for amb, corte in sorted(self.aproximados.items())[:10])
+            pend.append(Pendencia(
+                DISC, Severidade.ALERTA,
+                f"Altura de corte aplicada por nome parecido em {len(self.aproximados)} ambiente(s): {pares}.",
+                acao_sugerida="Confira se é o mesmo ambiente; se não for, informe a altura em Parâmetros.",
+            ))
         pend.append(Pendencia(DISC, Severidade.INFO, AVISO_ALTURAS))
         if "rodape" not in self.posicoes.values():
             pend.append(Pendencia(DISC, Severidade.INFO, "Rodapé não consta na etiqueta dos ambientes e não foi quantificado."))
@@ -322,6 +350,26 @@ class AgenteAcabamentos:
             return float(pd) if isinstance(pd, (int, float)) else None
         return float(v)
 
+    def _altura_de_corte(self, nome: str) -> float | None:
+        """Altura lida no corte para este ambiente.
+
+        Primeiro pelo nome igual. Se não houver, por pedaço de nome em comum ("COZ." do corte
+        para "COZ. / SERV." da planta), e só quando todos os cortes parecidos dão a mesma
+        altura — o que casou por aproximação fica registrado para virar pendência."""
+        exato = self.alturas_corte.get(_chave(nome))
+        if exato is not None:
+            return exato[0]
+        meus = _partes(nome)
+        achados = [
+            (h, bruto)
+            for chave, (h, bruto) in self.alturas_corte.items()
+            if any(_mesmo_pedaco(x, y) for x in meus for y in _partes(chave))
+        ]
+        if not achados or len({round(h, 3) for h, _ in achados}) != 1:
+            return None
+        self.aproximados[nome] = achados[0][1]
+        return achados[0][0]
+
     def _paredes(self, ambientes: list[Ambiente], catalogo: dict, pend: list[Pendencia]) -> list[ItemQuantitativo]:
         grupos: dict[str, list[Ambiente]] = {}
         for a in ambientes:
@@ -333,7 +381,7 @@ class AgenteAcabamentos:
             h_cod = self._altura(cod)
             alturas: dict[str, tuple[float, str]] = {}  # handle -> (altura, origem)
             for a in amb:
-                hc = self.alturas_corte.get(_chave(a.nome))
+                hc = self._altura_de_corte(a.nome)
                 if hc is not None:
                     alturas[a.handle] = (hc, "corte")
                 elif h_cod is not None:

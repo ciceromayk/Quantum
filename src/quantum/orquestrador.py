@@ -20,9 +20,11 @@ def _alturas_dos_cortes(cortes) -> tuple[dict[str, float], list]:
     from .modelos import Pendencia, Severidade
 
     vistos: dict[str, set[float]] = {}
+    sem_nome: list[float] = []
     for c in cortes:
         for a in ler_alturas_corte(c):
             vistos.setdefault(a.ambiente, set()).add(a.altura_m)
+        sem_nome += list(getattr(ler_alturas_corte, "sem_nome", []))
     alturas = {k: next(iter(v)) for k, v in vistos.items() if len(v) == 1}
     pend = [
         Pendencia("acabamentos", Severidade.ALERTA,
@@ -30,6 +32,22 @@ def _alturas_dos_cortes(cortes) -> tuple[dict[str, float], list]:
                   acao_sugerida="Informe a altura correta desse ambiente.")
         for k, v in vistos.items() if len(v) > 1
     ]
+    if alturas:
+        lidas = ", ".join(f"{k} ({v:.2f} m)".replace(f"{v:.2f}", f"{v:.2f}".replace(".", ",")) for k, v in sorted(alturas.items())[:12])
+        pend.append(Pendencia(
+            "acabamentos", Severidade.INFO,
+            f"Alturas lidas no(s) corte(s) para {len(alturas)} ambiente(s): {lidas}.",
+            acao_sugerida="Os ambientes com outro nome ficam sem altura: informe em Parâmetros ou use o mesmo nome no corte.",
+        ))
+    if sem_nome:
+        faixas = ", ".join(f"{h:.2f}".replace(".", ",") + " m" for h in sorted({round(h, 2) for h in sem_nome})[:8])
+        pend.append(Pendencia(
+            "acabamentos", Severidade.ALERTA,
+            f"{len(sem_nome)} trecho(s) de revestimento no corte sem nome de ambiente dentro da faixa "
+            f"(alturas {faixas}). Nenhuma altura foi aproveitada deles.",
+            acao_sugerida="Escreva o nome do ambiente dentro do trecho cortado, ou informe a altura em Parâmetros "
+                          "(altura_parede_<código>).",
+        ))
     return alturas, pend
 
 

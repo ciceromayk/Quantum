@@ -91,8 +91,12 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
   `--corte corte.dxf`. No corte, o revestimento é a hachura de padrão GRELHA/cerâmica/porcelanato
   na parede vista; a altura vai do piso acabado até a laje ou forro cortado, e o ambiente é o nome
   escrito na faixa. **Alturas tiradas de cortes valem só para os ambientes cortados e precisam de
-  conferência.** A altura do corte vale para o ambiente da planta com o mesmo nome; se o mesmo
-  nome aparece com alturas diferentes, nenhuma é usada.
+  conferência.** A altura do corte vale para o ambiente da planta com o mesmo nome e, quando
+  nenhum nome é igual, para o que tem um pedaço de nome em comum (`COZ.` do corte vale para
+  `COZ. / SERV.` da planta), só se todos os cortes parecidos derem a mesma altura — o que casou
+  assim vira alerta para conferência. Se o mesmo nome aparece com alturas diferentes, nenhuma é
+  usada. Trecho de revestimento sem nome de ambiente dentro da faixa não é adivinhado: vira
+  alerta dizendo quantos são e com que alturas.
 - A aba **Planta** mostra as polilinhas geradas junto com o desenho: cada acabamento entra como
   uma camada `QTD-*` própria, com a cor do DXF gerado, que se liga e desliga na lista de camadas
   (grupo "Acabamentos (geradas)"). É o mesmo desenho do arquivo que se baixa.
