@@ -131,6 +131,30 @@ def juntar_geradas(geo: dict, acabamentos: dict) -> dict:
     return geo
 
 
+def juntar_planta_falada(geo: dict, paredes: list) -> dict:
+    """Soma à geometria os eixos da planta falada pré-classificada, uma camada por sistema (as
+    mesmas do DXF que se baixa); `falada` lista os nomes, para o visualizador agrupá-las."""
+    from .planta_falada import CAMADA_A_CLASSIFICAR, CAMADA_DA_ESPEC, COR_DA_ESPEC
+
+    camadas = geo.setdefault("camadas", {})
+    nomes: set[str] = set()
+    for p in paredes:
+        cam = CAMADA_DA_ESPEC[p.especificacao] if p.especificacao else CAMADA_A_CLASSIFICAR
+        cor = COR_DA_ESPEC.get(p.especificacao, 7) if p.especificacao else 7
+        plano = []
+        for x, y in p.pontos:  # já em metros
+            plano += [round(x, 3), round(y, 3)]
+        if len(plano) < 4:
+            continue
+        c = camadas.get(cam)
+        if c is None:
+            c = camadas[cam] = {"cor": _cor_aci(cor), "linhas": []}
+        c["linhas"].append(plano)
+        nomes.add(cam)
+    geo["falada"] = sorted(nomes)
+    return geo
+
+
 def _cor_aci(aci: int) -> str:
     r, g, b = colors.aci2rgb(abs(aci) or 7)
     if r > 235 and g > 235 and b > 235:

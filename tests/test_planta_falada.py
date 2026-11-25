@@ -79,3 +79,22 @@ def test_mureta_com_texto_e_sem_texto(tmp_path):
     notas = [e.dxf.text for e in ezdxf.readfile(saida).modelspace().query("TEXT") if e.dxf.layer == CAMADA_INFERIDO]
     assert any("parede baixa" in n and "texto do desenho" in n for n in notas)
     assert sum("parede baixa" in n for n in notas) == 1  # a outra, sem texto, só fica a classificar
+
+
+def test_navegador_entrega_dxf_e_camadas_na_aba_planta(tmp_path):
+    import base64
+    import io
+    import json
+
+    from quantum.navegador import processar_dxf
+
+    arq = tmp_path / "arq.dxf"
+    criar_arquitetura(arq)
+    o = json.loads(processar_dxf(str(arq)))
+    assert o["planta_falada"]["paredes"] >= 3
+    dxf = base64.b64decode(o["dxf_planta_falada_base64"])
+    doc = ezdxf.read(io.StringIO(dxf.decode("utf-8", errors="replace")))
+    assert any(e.dxf.layer == "0_DRY_WALL_70MM_+ST+RU" for e in doc.modelspace())
+    geo = o["geometria"]
+    assert "0_DRY_WALL_70MM_+ST+RU" in geo["falada"] and CAMADA_A_CLASSIFICAR in geo["falada"]
+    assert geo["camadas"]["0_DRY_WALL_70MM_+ST+RU"]["linhas"]
