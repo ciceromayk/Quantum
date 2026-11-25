@@ -342,8 +342,7 @@ def classificar(p: Parede) -> None:
             p.inferido.append("bloco de concreto por estar junto de escada/elevador")
         else:
             p.especificacao = f"ALVENARIA TIJOLO DE {cm}CM"
-            if cm == "14":
-                p.inferido.append("tijolo (não bloco) de 14 cm")
+            p.inferido.append(f"tijolo cerâmico (não bloco) de {cm} cm")
 
 
 def _rotulos(d, f: float) -> list[tuple[str, tuple[float, float]]]:
