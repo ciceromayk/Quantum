@@ -30,11 +30,13 @@ DISC = "acabamentos"
 TIPOS = ("piso", "parede", "teto", "rodape")
 NOME_TIPO = {"piso": "Piso", "parede": "Parede", "teto": "Teto", "rodape": "Rodapé"}
 RX_CODIGO = re.compile(r"\d{2}")
+LIMITE_VAO_M2 = 2.0  # vão de porta/janela só é descontado se a área passar disso
 
 AVISO_ALTURAS = (
     "Alturas de revestimento de parede tiradas de cortes valem só para os ambientes que aparecem "
     "cortados e precisam de conferência. Ambientes fora dos cortes ficam como pendência até a "
-    "altura ser informada."
+    "altura ser informada. A opção 'pé-direito − laje' usa o pé-direito descontada a espessura da laje. "
+    "Vãos de porta e janela só são descontados quando a área do vão passa de 2 m². Nenhuma perda é aplicada."
 )
 
 
@@ -90,9 +92,14 @@ def _perimetro(pts: list[tuple[float, float]]) -> float:
 
 
 class AgenteAcabamentos:
-    def __init__(self, config: dict, parametros: dict | None = None, alturas_corte: dict[str, float] | None = None):
+    def __init__(self, config: dict, parametros: dict | None = None, alturas_corte: dict[str, float] | None = None,
+                 cortes_enviados: int = 0):
         self.cfg = config or {}
         self.par = parametros or {}
+        self.cortes_enviados = cortes_enviados
+        self.vaos: list[detector.Vao] = []
+        self.alturas_parede: list[dict] = []  # altura usada e área por ambiente, para conferência
+        self._f = 1.0
         # nome do ambiente (normalizado) -> (altura em m lida no corte, nome como está no corte).
         # Dois nomes do corte podem virar a mesma chave ("COZ." e "COZ"): se as alturas divergem,
         # nenhuma é usada, porque não dá para saber qual é a do ambiente.
@@ -208,6 +215,10 @@ class AgenteAcabamentos:
 
         self._contornos(d, ambientes, f)
         self._pendencias_contorno(ambientes, pend)
+        self._f = f
+        msp = getattr(d, "modelspace", None)
+        if msp is not None and self.cfg.get("deteccao") is not False:
+            self.vaos = detector.listar_vaos(msp, self.cfg.get("deteccao") or {})
 
         fora = sorted({(t, c) for a in ambientes for t, c in a.codigos.items() if c not in catalogo.get(t, {})})
         if fora:
@@ -254,6 +265,10 @@ class AgenteAcabamentos:
             "fator_m": f,
             "codigos_parede": sorted({a.codigos["parede"] for a in ambientes if "parede" in a.codigos}),
             "aviso_alturas": AVISO_ALTURAS,
+            "pe_menos_laje": self._pe_menos_laje(),
+            "limite_vao_m2": LIMITE_VAO_M2,
+            "alturas_parede": self.alturas_parede,
+            "vaos": self._resumo_vaos(),
             "grupos_integrados": self.grupos,
             "ambientes": [
                 {
@@ -360,14 +375,30 @@ class AgenteAcabamentos:
             ))
         return out
 
-    def _altura(self, cod: str) -> float | None:
-        v = self.par.get(f"altura_parede_{cod}")
+    def _pe_menos_laje(self) -> float | None:
+        """Altura até a laje: pé-direito descontada a espessura da laje (os dois informados)."""
+        pd, el = self.par.get("pe_direito"), self.par.get("espessura_laje")
+        if not isinstance(pd, (int, float)) or not isinstance(el, (int, float)) or pd - el <= 0:
+            return None
+        return float(pd) - float(el)
+
+    def _valor_altura(self, v) -> float | None:
         if v is None or v == "":
             return None
-        if isinstance(v, str) and v.strip().lower() == "teto":
-            pd = self.par.get("pe_direito")
-            return float(pd) if isinstance(pd, (int, float)) else None
+        if isinstance(v, str):
+            if v.strip().lower() in ("teto", "laje"):
+                return self._pe_menos_laje()
+            try:
+                return float(v.replace(",", "."))
+            except ValueError:
+                return None
         return float(v)
+
+    def _altura(self, cod: str) -> float | None:
+        return self._valor_altura(self.par.get(f"altura_parede_{cod}"))
+
+    def _altura_ambiente(self, nome: str) -> float | None:
+        return self._valor_altura(self.par.get(f"altura_ambiente_{_chave(nome)}"))
 
     def _altura_de_corte(self, nome: str) -> float | None:
         """Altura lida no corte para este ambiente.
@@ -392,44 +423,174 @@ class AgenteAcabamentos:
         self.aproximados[nome] = achados[0][1]
         return achados[0][0]
 
+    # ------------------------------------------------------------------ vãos
+    def _chave_vao(self, v: detector.Vao, f: float) -> str:
+        return f"{v.tipo}_{round(v.largura * f * 100)}"
+
+    def _desconto_vao(self, v: detector.Vao, f: float, h_parede: float) -> tuple[str, float | None, float | None]:
+        """(situação, área do vão, desconto) de um vão numa parede revestida até `h_parede`.
+
+        Regra: só vão com área ACIMA de 2 m² é descontado; até 2 m² entra cheio. A altura (e o
+        peitoril, na janela) não está na planta: vem de Parâmetros. Sem ela, o vão só dispensa
+        a altura quando nem com a altura máxima possível (pé-direito − laje) passa de 2 m²."""
+        chave = self._chave_vao(v, f)
+        w = v.largura * f
+        alt = self._valor_altura(self.par.get(f"altura_vao_{chave}"))
+        if alt is None:
+            hmax = self._pe_menos_laje()
+            if hmax is not None and w * hmax <= LIMITE_VAO_M2:
+                return "cheio", None, 0.0
+            return "sem_altura", None, None
+        area = w * alt
+        if area <= LIMITE_VAO_M2:
+            return "cheio", area, 0.0
+        if v.tipo == "porta":
+            return "descontado", area, w * min(alt, h_parede)
+        peit = self._valor_altura(self.par.get(f"peitoril_vao_{chave}"))
+        if peit is None:
+            return "sem_peitoril", area, None
+        return "descontado", area, w * max(0.0, min(h_parede, peit + alt) - peit)
+
+    def _resumo_vaos(self) -> list[dict]:
+        """Tipos de vão (tipo + largura) que abrem para paredes revestidas, para o quadro em Parâmetros."""
+        tipos: dict[str, dict] = {}
+        for reg in self.alturas_parede:
+            for v in reg["vaos"]:
+                t = tipos.setdefault(v["chave"], {
+                    "chave": v["chave"], "tipo": v["chave"].split("_")[0], "largura_m": round(v["largura_m"], 2),
+                    "handles": set(), "ambientes": set(), "situacoes": set(),
+                })
+                t["handles"].add(v["handle"])
+                t["ambientes"].add(reg["nome"])
+                if v["situacao"]:
+                    t["situacoes"].add(v["situacao"])
+        return [
+            {**{k: v for k, v in t.items() if k != "handles"}, "quantidade": len(t["handles"]),
+             "ambientes": sorted(t["ambientes"]), "situacoes": sorted(t["situacoes"])}
+            for _, t in sorted(tipos.items(), key=lambda kv: (kv[1]["tipo"], kv[1]["largura_m"]))
+        ]
+
     def _paredes(self, ambientes: list[Ambiente], catalogo: dict, pend: list[Pendencia]) -> list[ItemQuantitativo]:
+        f = self._f
         grupos: dict[str, list[Ambiente]] = {}
         for a in ambientes:
             if "parede" in a.codigos:
                 grupos.setdefault(a.codigos["parede"], []).append(a)
+        tol = 0.02 / f
         out = []
+        faltam_vao: dict[str, dict] = {}  # chave -> {tipo, largura, n, ambientes, falta}
+        nao_cortados: list[Ambiente] = []
         for cod in sorted(grupos):
             amb = grupos[cod]
             h_cod = self._altura(cod)
             alturas: dict[str, tuple[float, str]] = {}  # handle -> (altura, origem)
             for a in amb:
                 hc = self._altura_de_corte(a.nome)
+                if hc is None:
+                    nao_cortados.append(a)
+                ha = self._altura_ambiente(a.nome)
+                bruto_a = self.par.get(f"altura_ambiente_{_chave(a.nome)}")
+                bruto_c = self.par.get(f"altura_parede_{cod}")
+                ate_laje = lambda v: isinstance(v, str) and v.strip().lower() in ("teto", "laje")
                 if hc is not None:
                     alturas[a.handle] = (hc, "corte")
+                elif ha is not None:
+                    alturas[a.handle] = (ha, "pé-direito − laje" if ate_laje(bruto_a) else "informada no ambiente")
                 elif h_cod is not None:
-                    alturas[a.handle] = (h_cod, "informada")
+                    alturas[a.handle] = (h_cod, "pé-direito − laje" if ate_laje(bruto_c) else f"informada para a parede {cod}")
             sem_altura = [a for a in amb if a.handle not in alturas]
             medidos = [a for a in amb if a.perimetro_m is not None]
-            q = None
-            if not sem_altura and len(medidos) == len(amb):
-                q = round(sum(a.perimetro_m * alturas[a.handle][0] for a in amb), 4)
+            total, ok, n_desc, area_desc, n_cheios = 0.0, True, 0, 0.0, 0
+            for a in amb:
+                h = alturas.get(a.handle, (None, ""))[0]
+                reg = {
+                    "nome": a.nome, "codigo": cod, "handle": a.handle, "altura_m": h,
+                    "parametro": f"altura_ambiente_{_chave(a.nome)}",
+                    "origem_altura": alturas.get(a.handle, (None, None))[1], "perimetro_m": a.perimetro_m,
+                    "area_bruta_m2": None, "desconto_vaos_m2": None, "area_liquida_m2": None, "vaos": [],
+                }
+                self.alturas_parede.append(reg)
+                meus = detector.vaos_no_contorno(self.vaos, a.trechos_parede, tol) if a.perimetro_m is not None else []
+                for v in meus:
+                    reg["vaos"].append({"bloco": v.bloco, "handle": v.handle, "chave": self._chave_vao(v, f),
+                                        "largura_m": round(v.largura * f, 3), "area_m2": None, "situacao": None,
+                                        "desconto_m2": None})
+                if h is None or a.perimetro_m is None:
+                    ok = False
+                    continue
+                bruta = a.perimetro_m * h
+                desc, falta = 0.0, False
+                for v, rv in zip(meus, reg["vaos"]):
+                    situ, area, d = self._desconto_vao(v, f, h)
+                    chave = rv["chave"]
+                    rv.update(area_m2=None if area is None else round(area, 4), situacao=situ,
+                              desconto_m2=None if d is None else round(d, 4))
+                    if d is None:
+                        falta = True
+                        g = faltam_vao.setdefault(chave, {"tipo": v.tipo, "largura_m": round(v.largura * f, 2), "n": set(),
+                                                          "ambientes": set(), "falta": situ})
+                        g["n"].add(v.handle)
+                        g["ambientes"].add(a.nome)
+                    elif situ == "descontado":
+                        desc += d
+                        n_desc += 1
+                    else:
+                        n_cheios += 1
+                desc = min(desc, bruta)
+                area_desc += desc
+                reg["area_bruta_m2"] = round(bruta, 4)
+                if falta:
+                    ok = False
+                    continue
+                reg["desconto_vaos_m2"] = round(desc, 4)
+                reg["area_liquida_m2"] = round(bruta - desc, 4)
+                total += bruta - desc
+            q = round(total, 4) if ok and not sem_altura and len(medidos) == len(amb) else None
             if sem_altura:
                 nomes = ", ".join(sorted({a.nome for a in sem_altura}))[:200]
                 pend.append(Pendencia(
                     DISC, Severidade.BLOQUEANTE,
                     f"Parede {cod}: altura do revestimento não informada para {len(sem_altura)} ambiente(s) ({nomes}).",
-                    acao_sugerida=f"Envie o corte desses ambientes ou informe altura_parede_{cod} (m, ou 'teto' com o pé-direito).",
+                    acao_sugerida="Informe a altura de cada ambiente em Parâmetros (ou marque 'pé-direito − laje'), "
+                                  "ou envie um corte que passe por eles.",
                 ))
-            obs = f"{len(amb)} ambiente(s). Perímetro do contorno × altura, sem descontar vãos de portas e janelas."
+            obs = (f"{len(amb)} ambiente(s). Perímetro do contorno × altura, menos os vãos de porta e janela acima de "
+                   f"2 m² ({n_desc} descontado(s), {_m2(area_desc)}); vãos de até 2 m² entram cheios ({n_cheios}). Sem perdas.")
             if len(medidos) < len(amb):
                 obs = f"{len(amb) - len(medidos)} de {len(amb)} ambiente(s) sem contorno: área não medida."
-            de_corte = sorted({f"{a.nome} " + f"{alturas[a.handle][0]:.2f}".replace(".", ",") + " m" for a in amb if alturas.get(a.handle, (0, ""))[1] == "corte"})
-            if de_corte:
-                obs += " Altura lida do corte (conferir): " + "; ".join(de_corte) + "."
+            usadas = sorted({(a.nome, alturas[a.handle][0], alturas[a.handle][1]) for a in amb if a.handle in alturas})
+            if usadas:
+                obs += " Altura usada: " + "; ".join(f"{n} {_m(h)} ({o})" for n, h, o in usadas)[:600] + "."
             out.append(ItemQuantitativo(
                 disciplina=DISC, codigo=f"ACB-PAREDE-{cod}",
                 descricao=f"Parede {cod}: {catalogo.get('parede', {}).get(cod, 'código fora do quadro')}",
                 unidade="m²", quantidade=q, detalhe=", ".join(sorted({a.nome for a in amb}))[:200],
                 handles=[a.handle for a in amb], observacao=obs,
+            ))
+
+        if self.cortes_enviados and nao_cortados:
+            nomes = sorted({a.nome for a in nao_cortados})
+            com = [n for n in nomes if self._altura_ambiente(n) is not None]
+            msg = (f"O(s) corte(s) não representam todos os ambientes: {len(nomes)} ambiente(s) da planta sem altura "
+                   f"lida no corte: {', '.join(nomes)[:400]}.")
+            if com:
+                msg += f" Já com altura informada à mão: {', '.join(com)[:200]}."
+            pend.append(Pendencia(
+                DISC, Severidade.ALERTA, msg,
+                handles=[a.handle for a in nao_cortados],
+                acao_sugerida="Preencha a altura desses ambientes em Parâmetros > Altura do revestimento por ambiente. "
+                              "A opção 'pé-direito − laje' usa o pé-direito descontada a espessura da laje.",
+            ))
+        if faltam_vao:
+            def desc_g(c, g):
+                nome = "janela" if g["tipo"] == "janela" else "porta"
+                o_que = "peitoril" if g["falta"] == "sem_peitoril" else "altura"
+                return f"{nome} {_m(g['largura_m'])} × {len(g['n'])} ({o_que})"
+            pend.append(Pendencia(
+                DISC, Severidade.BLOQUEANTE,
+                "Vãos sem altura informada (a planta não tem a altura das esquadrias, e só vãos acima de 2 m² são "
+                "descontados): " + ", ".join(desc_g(c, g) for c, g in sorted(faltam_vao.items())) + ".",
+                acao_sugerida="Informe altura (e peitoril, nas janelas) de cada tipo de vão em Parâmetros > Vãos, "
+                              "conforme o quadro de esquadrias.",
             ))
         return out

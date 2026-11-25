@@ -371,6 +371,71 @@ def _divisa_proposta(p: Polygon, a1, a2, pt1, pt2, grade: float = 0.0):
 
 
 @dataclass
+class Vao:
+    """Vão de esquadria em planta: o retângulo dentro da parede, sem a folha."""
+
+    bloco: str
+    tipo: str  # "porta" ou "janela"
+    largura: float  # unidades do desenho (lado maior do retângulo)
+    retangulo: list[tuple[float, float]]
+    handle: str
+
+
+def tipo_vao(nome_bloco: str) -> str:
+    """Janela pelo nome do bloco; o resto é porta (vão que vai até o piso)."""
+    return "janela" if "JANELA" in nome_bloco.upper() else "porta"
+
+
+def listar_vaos(msp, config: dict | None = None) -> list[Vao]:
+    """Um vão por bloco de esquadria, com a largura medida no retângulo que ele ocupa na parede.
+
+    O retângulo vem das linhas de parede do bloco (faces e batentes); bloco sem elas usa
+    todas as suas linhas. Altura e peitoril não estão na planta e não são presumidos."""
+    if not TEM_SHAPELY:
+        return []
+    cfg = {**PADRAO, **(config or {})}
+    paredes, esq = set(cfg["camadas_parede"]), set(cfg["camadas_esquadria"])
+    out = []
+    for e in msp:
+        if e.dxftype() != "INSERT" or e.dxf.get("layer", "0") not in esq:
+            continue
+        try:
+            vs = [v for v in e.virtual_entities() if v.dxftype() != "WIPEOUT"]
+        except Exception:
+            continue
+        g = [x for v in vs if v.dxf.get("layer") in paredes and (x := _linha(v)) is not None]
+        if not g:
+            g = [x for v in vs if v.dxftype() in ("LINE", "LWPOLYLINE", "POLYLINE") and (x := _linha(v)) is not None]
+        if not g:
+            continue
+        r = unary_union(g).minimum_rotated_rectangle
+        if r.geom_type != "Polygon" or r.area <= 0:
+            continue
+        c = list(r.exterior.coords)
+        largura = max(math.dist(c[0], c[1]), math.dist(c[1], c[2]))
+        nome = e.dxf.name
+        out.append(Vao(nome, tipo_vao(nome), largura, [(x, y) for x, y in c], e.dxf.handle))
+    return out
+
+
+def vaos_no_contorno(vaos: list[Vao], trechos: list[list[tuple[float, float]]], tol: float) -> list[Vao]:
+    """Vãos que abrem para o ambiente: o retângulo encosta nos trechos de parede do contorno
+    ao longo de pelo menos metade da largura (um canto encostado não conta)."""
+    if not TEM_SHAPELY or not vaos or not trechos:
+        return []
+    linhas = [LineString(t) for t in trechos if len(t) >= 2]
+    if not linhas:
+        return []
+    borda = unary_union(linhas)
+    out = []
+    for v in vaos:
+        r = Polygon(v.retangulo).buffer(tol * 3)
+        if r.intersects(borda) and r.intersection(borda).length >= 0.5 * v.largura:
+            out.append(v)
+    return out
+
+
+@dataclass
 class GrupoIntegrado:
     rotulos: list[int]
     contorno: Contorno  # espaço inteiro; a área bate com a soma dos rótulos

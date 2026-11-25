@@ -53,7 +53,8 @@ def para_markdown(rel: Relatorio) -> str:
     disciplinas: dict[str, list] = {}
     for i in rel.itens:
         disciplinas.setdefault(i.disciplina, []).append(i)
-    L += ["", "## Quantitativos por disciplina"]
+    L += ["", "## Quantitativos por disciplina", "",
+          "Quantidades líquidas, sem perdas: nenhum percentual de perda ou quebra é aplicado."]
     if not disciplinas:
         L += ["", "Nenhum item encontrado. Verifique se os nomes de camada seguem as regras (`--regras`)."]
     for disc, itens in disciplinas.items():
@@ -62,6 +63,18 @@ def para_markdown(rel: Relatorio) -> str:
             L.append(
                 f"| {i.codigo} | {i.descricao} | {i.detalhe or ''} | {_fmt(i.quantidade)} | {i.unidade} "
                 f"| {', '.join(i.camadas)} | {i.observacao or ''} |"
+            )
+
+    paredes = (rel.acabamentos or {}).get("alturas_parede") or []
+    if paredes:
+        L += ["", "### Revestimento de parede por ambiente", "",
+              "Altura usada em cada ambiente e vãos descontados (só os acima de 2 m²).", "",
+              "| Ambiente | Parede | Altura (m) | Origem da altura | Perímetro (m) | Bruta (m²) | Vãos descontados (m²) | Líquida (m²) |",
+              "|---|---|---:|---|---:|---:|---:|---:|"]
+        for a in paredes:
+            L.append(
+                f"| {a['nome']} | {a['codigo']} | {_fmt(a['altura_m'])} | {a['origem_altura'] or 'não informada'} "
+                f"| {_fmt(a['perimetro_m'])} | {_fmt(a['area_bruta_m2'])} | {_fmt(a['desconto_vaos_m2'])} | {_fmt(a['area_liquida_m2'])} |"
             )
 
     if rel.orcamento:
@@ -109,6 +122,8 @@ def para_xlsx(rel: Relatorio, caminho: str | Path) -> None:
     for k, v in rel.parametros.items():
         ws.append([f"Parâmetro {k}" + ("" if isinstance(v, str) else " (m)"), v])
 
+    ws.append(["Quantidades líquidas, sem perdas: nenhum percentual de perda ou quebra é aplicado."])
+
     q = wb.create_sheet("Quantitativos")
     q.append(["Disciplina", "Código", "Descrição", "Detalhe", "Quantidade", "Unidade", "Camadas", "Observação"])
     for i in rel.itens:
@@ -138,6 +153,17 @@ def para_xlsx(rel: Relatorio, caminho: str | Path) -> None:
             a.append([x["nome"], x["area_rotulo"], c.get("piso"), c.get("parede"), c.get("teto"), x["area_contorno_m2"], x["perimetro_m"]])
         a.append([])
         a.append([rel.acabamentos.get("aviso_alturas", "")])
+
+    if rel.acabamentos.get("alturas_parede"):
+        w = wb.create_sheet("Paredes por ambiente")
+        w.append(["Ambiente", "Parede", "Altura (m)", "Origem da altura", "Perímetro (m)", "Área bruta (m²)",
+                  "Vãos descontados (m²)", "Área líquida (m²)", "Vãos (tipo_largura cm: situação)"])
+        for x in rel.acabamentos["alturas_parede"]:
+            vaos = "; ".join(f"{v['chave']}: {v['situacao'] or 'sem altura do ambiente'}" for v in x["vaos"])
+            w.append([x["nome"], x["codigo"], x["altura_m"], x["origem_altura"] or "não informada", x["perimetro_m"],
+                      x["area_bruta_m2"], x["desconto_vaos_m2"], x["area_liquida_m2"], vaos])
+        w.append([])
+        w.append(["Só vãos de porta e janela com área acima de 2 m² são descontados. Sem perdas."])
 
     for folha in wb.worksheets[1:]:
         for c in folha[1]:

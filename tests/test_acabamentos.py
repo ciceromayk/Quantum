@@ -45,7 +45,7 @@ def _ac(rel):
 def test_le_quadro_etiquetas_e_mede(tmp_path):
     arq = tmp_path / "acab.dxf"
     criar_planta_acabamentos(arq)
-    rel = analisar(arq, parametros={"pe_direito": 2.8, "altura_parede_01": 1.2, "altura_parede_02": "teto"})
+    rel = analisar(arq, parametros={"pe_direito": 2.92, "espessura_laje": 0.12, "altura_parede_01": 1.2, "altura_parede_02": "teto"})
     cat = rel.acabamentos["catalogo"]
     assert cat["piso"] == {"01": "PISO UM", "02": "PISO DOIS"}
     assert cat["parede"]["02"] == "PAREDE DOIS"
@@ -53,7 +53,7 @@ def test_le_quadro_etiquetas_e_mede(tmp_path):
     assert it["ACB-PISO-01"].quantidade == pytest.approx(12.0)
     assert it["ACB-PISO-02"].quantidade == pytest.approx(3.0)
     assert it["ACB-TETO-02"].quantidade == pytest.approx(12.0)
-    # parede 02 (SALA): perímetro 14 m × pé-direito 2,8; parede 01 (BANHO): 7 m × 1,2
+    # parede 02 (SALA): perímetro 14 m × (pé-direito 2,92 − laje 0,12); parede 01 (BANHO): 7 m × 1,2
     assert it["ACB-PAREDE-02"].quantidade == pytest.approx(14 * 2.8)
     assert it["ACB-PAREDE-01"].quantidade == pytest.approx(7 * 1.2)
     msgs = " ".join(p.mensagem for p in rel.pendencias)
@@ -185,3 +185,19 @@ def test_conflito_parecido_barra_o_casamento_por_aproximacao():
     ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COZ": 2.60, "COZINHA GOURMET": 2.70})
     assert ag._altura_de_corte("COZ. / SERV.") is None
     assert ag.aproximados == {}
+
+
+def test_corte_sem_todos_os_ambientes_avisa(tmp_path):
+    arq, corte = tmp_path / "acab.dxf", tmp_path / "corte.dxf"
+    criar_planta_acabamentos(arq)
+    criar_corte(corte)
+    rel = analisar(arq, cortes=[corte], parametros={"pe_direito": 2.92, "espessura_laje": 0.12})
+    alerta = next(p for p in rel.pendencias if "não representam todos os ambientes" in p.mensagem)
+    assert "SALA" in alerta.mensagem and "BANHO" not in alerta.mensagem
+    assert "pé-direito − laje" in alerta.acao_sugerida
+    # SALA preenchida à mão com pé-direito − laje: 14 m × 2,80
+    rel = analisar(arq, cortes=[corte], parametros={"pe_direito": 2.92, "espessura_laje": 0.12, "altura_ambiente_SALA": "laje"})
+    sala = next(a for a in rel.acabamentos["alturas_parede"] if a["nome"] == "SALA")
+    assert sala["altura_m"] == pytest.approx(2.80) and sala["area_liquida_m2"] == pytest.approx(14 * 2.80)
+    banho = next(a for a in rel.acabamentos["alturas_parede"] if a["nome"] == "BANHO")
+    assert banho["origem_altura"] == "corte" and banho["altura_m"] == pytest.approx(2.49)
