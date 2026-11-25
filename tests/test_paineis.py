@@ -164,3 +164,15 @@ def test_parede_baixa_pelo_texto_do_desenho(tmp_path):
     ws = load_workbook(tmp_path / "s.xlsx")["Paredes e Paineis"]
     r = next(r for r in range(6, ws.max_row + 1) if "MURETA" in str(ws.cell(r, 14).value))
     assert ws.cell(r, 12).value == pytest.approx(0.20) and ws.cell(r, 13).value == 0 and ws.cell(r, 15).value == 0
+
+
+def test_nome_do_ambiente_em_texto_misto_com_mureta(tmp_path):
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (4, 0)], dxfattribs={"layer": "0_BLOCO DE CONCRETO_14CM"})
+    msp.add_mtext("ESCADA\\PMURETA h=0,20m", dxfattribs={"insert": (2, 0.4), "char_height": 0.15})
+    arq = tmp_path / "misto.dxf"
+    doc.saveas(arq)
+    l = analisar(arq, parametros=PAR).paineis["linhas"][0]
+    assert l["classificacao"] == "CX DE ESCADA" and l["altura_m"] == pytest.approx(0.20)

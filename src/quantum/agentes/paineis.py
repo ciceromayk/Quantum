@@ -318,8 +318,10 @@ class AgentePaineis:
         areas = [(x, y, _num(t)) for t, x, y, _ in textos if RX_AREA.match(t)]
         nomes = []
         for t, x, y, _ in textos:
+            if (mb := RX_PAREDE_BAIXA.search(t)):
+                t = t[:mb.start()]  # texto misto (ESCADA + MURETA h=…): fica só o nome do ambiente
             k = _chave(t)
-            if len(k) < 2 or NAO_NOME.match(k) or RX_ID_VAO.match(k) or RX_H.match(t) or len(k) > 30 or RX_PAREDE_BAIXA.search(t):
+            if len(k) < 2 or NAO_NOME.match(k) or RX_ID_VAO.match(k) or RX_H.match(t) or len(k) > 30:
                 continue
             perto = [(math.hypot(ax - x, ay - y), a) for ax, ay, a in areas if 0 < y - ay < 1.0 / f and abs(ax - x) < 1.5 / f]
             area = min(perto)[1] if perto else None
