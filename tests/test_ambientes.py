@@ -333,3 +333,88 @@ def test_geometria_recebe_as_polilinhas_geradas(tmp_path):
     saida = tmp_path / "planta_acabamentos.dxf"
     n = gerar_dxf_acabamentos(arq, rel.acabamentos, saida)
     assert sum(len(geo["camadas"][g]["linhas"]) for g in geo["geradas"]) == n
+
+
+def criar_quarto_com_vaos(caminho):
+    """QUARTO 3 x 4 com porta de 0,80 m embaixo e janela de 2,00 m em cima."""
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    _quadro(msp)
+    e = 0.15
+    for y in (0, -e):  # parede de baixo, com o vão da porta de 1,0 a 1,8
+        msp.add_line((-e if y else 0, y), (1.0, y), dxfattribs={"layer": "ALVENARIA"})
+        msp.add_line((1.8, y), (3 + (e if y else 0), y), dxfattribs={"layer": "ALVENARIA"})
+    for y in (4, 4 + e):  # parede de cima, com o vão da janela de 0,5 a 2,5
+        msp.add_line((-e if y > 4 else 0, y), (0.5, y), dxfattribs={"layer": "ALVENARIA"})
+        msp.add_line((2.5, y), (3 + (e if y > 4 else 0), y), dxfattribs={"layer": "ALVENARIA"})
+    for x in (0, -e):
+        msp.add_line((x, -e if x else 0), (x, 4 + (e if x else 0)), dxfattribs={"layer": "ALVENARIA"})
+    for x in (3, 3 + e):
+        msp.add_line((x, -e if x > 3 else 0), (x, 4 + (e if x > 3 else 0)), dxfattribs={"layer": "ALVENARIA"})
+    porta = doc.blocks.new(name="Porta 26[1]_1")
+    porta.add_line((0, 0), (0, -e), dxfattribs={"layer": "ALVENARIA"})
+    porta.add_line((0.8, 0), (0.8, -e), dxfattribs={"layer": "ALVENARIA"})
+    porta.add_arc((0, 0), 0.8, 0, 90, dxfattribs={"layer": "ESQ"})
+    msp.add_blockref("Porta 26[1]_1", (1.0, 0), dxfattribs={"layer": "ESQ"})
+    janela = doc.blocks.new(name="Janela 26[2]_1")
+    janela.add_line((0, 0), (0, e), dxfattribs={"layer": "ALVENARIA"})
+    janela.add_line((2.0, 0), (2.0, e), dxfattribs={"layer": "ALVENARIA"})
+    janela.add_line((0, e / 2), (2.0, e / 2), dxfattribs={"layer": "ESQ"})
+    msp.add_blockref("Janela 26[2]_1", (0.5, 4), dxfattribs={"layer": "ESQ"})
+    _rotulo(doc, msp, "QUARTO", 12.0, 1.0, 2.0)
+    doc.saveas(caminho)
+
+
+def _parede_quarto(rel):
+    return next(a for a in rel.acabamentos["alturas_parede"] if a["nome"] == "QUARTO")
+
+
+def test_desconta_so_vao_acima_de_2m2(tmp_path):
+    arq = tmp_path / "quarto.dxf"
+    criar_quarto_com_vaos(arq)
+    par = {"altura_ambiente_QUARTO": 2.5, "altura_vao_porta_80": 2.10, "altura_vao_janela_200": 1.2,
+           "peitoril_vao_janela_200": 1.0}
+    rel = analisar(arq, parametros=par)
+    q = _parede_quarto(rel)
+    assert q["perimetro_m"] == pytest.approx(14.0, rel=0.02)
+    sit = {v["chave"]: v["situacao"] for v in q["vaos"]}
+    # porta 0,80 × 2,10 = 1,68 m²: entra cheia; janela 2,00 × 1,20 = 2,40 m²: descontada
+    assert sit == {"porta_80": "cheio", "janela_200": "descontado"}
+    # desconto só na faixa revestida: de 1,0 (peitoril) a 2,2 (topo da janela), abaixo de 2,5
+    assert q["desconto_vaos_m2"] == pytest.approx(2.0 * 1.2)
+    assert q["area_liquida_m2"] == pytest.approx(q["perimetro_m"] * 2.5 - 2.4)
+    it = next(i for i in rel.itens if i.codigo == "ACB-PAREDE-01")
+    assert it.quantidade == pytest.approx(q["area_liquida_m2"])
+    assert "Sem perdas" in it.observacao
+
+    # revestimento até 1,5 m: a janela (1,0 a 2,2) só tira a faixa de 1,0 a 1,5
+    rel = analisar(arq, parametros={**par, "altura_ambiente_QUARTO": 1.5})
+    assert _parede_quarto(rel)["desconto_vaos_m2"] == pytest.approx(2.0 * 0.5)
+
+    # vão de exatamente 2 m² entra cheio
+    rel = analisar(arq, parametros={**par, "altura_vao_janela_200": 1.0})
+    assert _parede_quarto(rel)["desconto_vaos_m2"] == pytest.approx(0.0)
+
+
+def test_vao_sem_altura_vira_pendencia(tmp_path):
+    arq = tmp_path / "quarto.dxf"
+    criar_quarto_com_vaos(arq)
+    # pé-direito 2,92 − laje 0,12 = 2,80: porta 0,80 × 2,80 = 2,24 pode passar de 2 m², então pede a altura
+    rel = analisar(arq, parametros={"pe_direito": 2.92, "espessura_laje": 0.12, "altura_ambiente_QUARTO": "laje"})
+    q = _parede_quarto(rel)
+    assert q["altura_m"] == pytest.approx(2.80)
+    assert q["origem_altura"] == "pé-direito − laje"
+    it = next(i for i in rel.itens if i.codigo == "ACB-PAREDE-01")
+    assert it.quantidade is None
+    bloq = " ".join(p.mensagem for p in rel.pendencias if p.severidade.value == "bloqueante")
+    assert "porta 0,80 m" in bloq and "janela 2,00 m" in bloq
+    tipos = {v["chave"]: v for v in rel.acabamentos["vaos"]}
+    assert tipos["porta_80"]["quantidade"] == 1 and tipos["janela_200"]["tipo"] == "janela"
+
+    # com pé-direito − laje de 2,40, a porta (0,80 × 2,40 = 1,92) nunca passa de 2 m²: dispensa a altura
+    rel = analisar(arq, parametros={"pe_direito": 2.52, "espessura_laje": 0.12, "altura_ambiente_QUARTO": "laje",
+                                     "altura_vao_janela_200": 1.2, "peitoril_vao_janela_200": 1.0})
+    sit = {v["chave"]: v["situacao"] for v in _parede_quarto(rel)["vaos"]}
+    assert sit["porta_80"] == "cheio"
+    assert next(i for i in rel.itens if i.codigo == "ACB-PAREDE-01").quantidade is not None

@@ -46,7 +46,7 @@ interface CorteReg extends CorteResumo {
 }
 
 /** Valores em metros; "teto" = altura até o teto (usa o pé-direito). */
-export type Parametros = Record<string, number | "teto">;
+export type Parametros = Record<string, number | "teto" | "laje">;
 
 export interface AmbienteAcabamento {
   nome: string;
@@ -58,12 +58,50 @@ export interface AmbienteAcabamento {
   contorno_origem?: string | null;
 }
 
+export interface VaoAmbiente {
+  bloco: string;
+  chave: string;
+  largura_m: number;
+  area_m2: number | null;
+  situacao: "cheio" | "descontado" | "sem_altura" | "sem_peitoril" | null;
+  desconto_m2: number | null;
+}
+
+export interface ParedeAmbiente {
+  nome: string;
+  codigo: string;
+  parametro: string; // chave do parâmetro de altura deste ambiente (altura_ambiente_<NOME>)
+  altura_m: number | null;
+  origem_altura: string | null;
+  perimetro_m: number | null;
+  area_bruta_m2: number | null;
+  desconto_vaos_m2: number | null;
+  area_liquida_m2: number | null;
+  vaos: VaoAmbiente[];
+}
+
+export interface TipoVao {
+  chave: string; // porta_82, janela_157...
+  tipo: "porta" | "janela";
+  largura_m: number;
+  quantidade: number;
+  ambientes: string[];
+  situacoes: string[];
+}
+
 export interface Acabamentos {
   catalogo: Partial<Record<"piso" | "parede" | "teto" | "rodape", Record<string, string>>>;
   codigos_parede: string[];
   aviso_alturas: string;
   ambientes: AmbienteAcabamento[];
+  pe_menos_laje?: number | null;
+  limite_vao_m2?: number;
+  alturas_parede?: ParedeAmbiente[];
+  vaos?: TipoVao[];
 }
+
+/** Parâmetro de altura que aceita "teto"/"laje" (pé-direito − espessura da laje) no lugar de um número. */
+export const aceitaLaje = (k: string) => k.startsWith("altura_parede_") || k.startsWith("altura_ambiente_");
 
 export interface Projeto {
   id: number;
@@ -410,7 +448,8 @@ export const api = {
   definirParametros: async (id: number, valores: Parametros, unidade: string | null) => {
     const p = exigir(await banco.obter<PavimentoReg>("pavimentos", id), "Pavimento");
     for (const [k, v] of Object.entries(valores)) {
-      if (v === "teto" && k.startsWith("altura_parede_")) continue;
+      if ((v === "teto" || v === "laje") && aceitaLaje(k)) continue;
+      if (typeof v === "number" && v === 0 && k.startsWith("peitoril_vao_")) continue; // janela rente ao piso
       if (!(typeof v === "number" && v > 0 && v <= 100)) throw new Error(`${k} deve estar entre 0 e 100 metros`);
     }
     await banco.gravar("pavimentos", { ...p, parametros: valores, unidade });

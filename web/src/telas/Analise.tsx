@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Acabamentos, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
+import { aceitaLaje, Acabamentos, AnaliseDetalhe, api, Item, Parametros, Pavimento, Pendencia, Severidade } from "../api";
 import Visualizador from "./Visualizador";
 import { dataHora, num, SEVERIDADE, STATUS } from "../formato";
 
@@ -216,12 +216,12 @@ function ParametrosTela({
     const limpos: Parametros = {};
     for (const [k, v] of Object.entries(valores)) {
       if (!v.trim()) continue;
-      if (v === "teto" && k.startsWith("altura_parede_")) {
-        limpos[k] = "teto";
+      if ((v === "teto" || v === "laje") && aceitaLaje(k)) {
+        limpos[k] = "laje";
         continue;
       }
       const n = Number(v.replace(",", "."));
-      if (!Number.isFinite(n) || n <= 0) {
+      if (!Number.isFinite(n) || n < 0 || (n === 0 && !k.startsWith("peitoril_vao_"))) {
         setErro(`Valor inválido para ${conhecidos[k] ?? k}`);
         return;
       }
@@ -239,7 +239,24 @@ function ParametrosTela({
     }
   }
 
-  const nomes = [...new Set([...Object.keys(conhecidos), ...Object.keys(valores)])].filter((k) => !k.startsWith("altura_parede_"));
+  const proprios = ["altura_parede_", "altura_ambiente_", "altura_vao_", "peitoril_vao_"];
+  const nomes = [...new Set([...Object.keys(conhecidos), ...Object.keys(valores)])].filter(
+    (k) => !proprios.some((p) => k.startsWith(p)),
+  );
+  // um ambiente por nome (o corte e a altura informada valem pelo nome)
+  const porNome = new Map<string, { nome: string; parametro: string; codigos: Set<string>; corte: number | null }>();
+  for (const a of acabamentos?.alturas_parede ?? []) {
+    const r = porNome.get(a.parametro) ?? { nome: a.nome, parametro: a.parametro, codigos: new Set(), corte: null };
+    r.codigos.add(a.codigo);
+    if (a.origem_altura === "corte" && a.altura_m != null) r.corte = a.altura_m;
+    porNome.set(a.parametro, r);
+  }
+  const ambientes = [...porNome.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const pml = acabamentos?.pe_menos_laje;
+  const textoLaje = pml != null ? `pé-direito − laje (${num(pml)} m)` : "pé-direito − laje (informe pé-direito e espessura da laje)";
+  const faltando = ambientes.filter((a) => a.corte == null && !(valores[a.parametro] ?? "").trim());
+  const vaos = acabamentos?.vaos ?? [];
+  const limite = acabamentos?.limite_vao_m2 ?? 2;
   return (
     <section className="cartao">
       <h2>Parâmetros do pavimento</h2>
@@ -259,15 +276,103 @@ function ParametrosTela({
             />
           </label>
         ))}
+        {ambientes.length > 0 && (
+          <div className="form-acoes">
+            <h2>Altura do revestimento por ambiente</h2>
+            <p className="faixa">{acabamentos?.aviso_alturas}</p>
+            {faltando.length > 0 && (
+              <p className="faixa alerta">
+                {faltando.length} ambiente(s) sem altura lida no corte nem informada: {faltando.map((a) => a.nome).join(", ")}.{" "}
+                <button
+                  type="button"
+                  className="botao secundario"
+                  onClick={() =>
+                    setValores({ ...valores, ...Object.fromEntries(faltando.map((a) => [a.parametro, "laje"])) })
+                  }
+                >
+                  Usar pé-direito − laje em todos eles
+                </button>
+              </p>
+            )}
+          </div>
+        )}
+        {ambientes.map((a) => {
+          const k = a.parametro;
+          const ateLaje = valores[k] === "laje" || valores[k] === "teto";
+          const codigos = [...a.codigos].sort().join(", ");
+          if (a.corte != null)
+            return (
+              <label key={k}>
+                {a.nome} (parede {codigos})
+                <input value={`${num(a.corte)} m, lida no corte`} disabled />
+              </label>
+            );
+          return (
+            <label key={k}>
+              {a.nome} (parede {codigos})
+              <input
+                inputMode="decimal"
+                value={ateLaje ? "" : (valores[k] ?? "")}
+                disabled={ateLaje}
+                onChange={(e) => setValores({ ...valores, [k]: e.target.value })}
+                placeholder={ateLaje ? textoLaje : "não está no corte: altura em m"}
+              />
+              <span className="marcar">
+                <input
+                  type="checkbox"
+                  checked={ateLaje}
+                  onChange={(e) => setValores({ ...valores, [k]: e.target.checked ? "laje" : "" })}
+                />{" "}
+                {textoLaje}
+              </span>
+            </label>
+          );
+        })}
+        {vaos.length > 0 && (
+          <div className="form-acoes">
+            <h2>Vãos de portas e janelas</h2>
+            <p className="faixa">
+              Só vãos com área acima de {num(limite)} m² são descontados do revestimento; os de até {num(limite)} m² entram
+              cheios. A planta não traz a altura das esquadrias: preencha pelo quadro de esquadrias. Largura medida no
+              bloco, dentro da parede. Vão que nem com a altura máxima ({pml != null ? `${num(pml)} m` : "pé-direito − laje"}) passa
+              de {num(limite)} m² não precisa de altura.
+            </p>
+          </div>
+        )}
+        {vaos.map((v) => {
+          const ka = `altura_vao_${v.chave}`;
+          const kp = `peitoril_vao_${v.chave}`;
+          const dispensa = pml != null && v.largura_m * pml <= limite;
+          return (
+            <label key={v.chave}>
+              {v.tipo === "janela" ? "Janela" : "Porta"} {num(v.largura_m)} m · {v.quantidade} vão(s) ·{" "}
+              <span className="discreto">{v.ambientes.join(", ")}</span>
+              <input
+                inputMode="decimal"
+                value={valores[ka] ?? ""}
+                onChange={(e) => setValores({ ...valores, [ka]: e.target.value })}
+                placeholder={dispensa ? "dispensada (até 2 m² de qualquer jeito)" : "altura do vão em m"}
+              />
+              {v.tipo === "janela" && (
+                <input
+                  inputMode="decimal"
+                  value={valores[kp] ?? ""}
+                  onChange={(e) => setValores({ ...valores, [kp]: e.target.value })}
+                  placeholder="peitoril em m"
+                />
+              )}
+            </label>
+          );
+        })}
         {paredes.length > 0 && (
           <div className="form-acoes">
-            <h2>Altura do revestimento de parede</h2>
-            <p className="faixa">{acabamentos?.aviso_alturas}</p>
+            <h2>Altura por código de parede (opcional)</h2>
+            <p className="discreto">Vale para os ambientes do código que não têm altura de corte nem altura própria acima.</p>
           </div>
         )}
         {paredes.map((c) => {
           const k = `altura_parede_${c}`;
-          const ateTeto = valores[k] === "teto";
+          const ateTeto = valores[k] === "teto" || valores[k] === "laje";
           return (
             <label key={k}>
               Parede {c}: {descParede(c)}
@@ -276,15 +381,15 @@ function ParametrosTela({
                 value={ateTeto ? "" : (valores[k] ?? "")}
                 disabled={ateTeto}
                 onChange={(e) => setValores({ ...valores, [k]: e.target.value })}
-                placeholder={ateTeto ? "até o teto (pé-direito)" : "altura em m, não informada"}
+                placeholder={ateTeto ? textoLaje : "altura em m, não informada"}
               />
               <span className="marcar">
                 <input
                   type="checkbox"
                   checked={ateTeto}
-                  onChange={(e) => setValores({ ...valores, [k]: e.target.checked ? "teto" : "" })}
+                  onChange={(e) => setValores({ ...valores, [k]: e.target.checked ? "laje" : "" })}
                 />{" "}
-                até o teto
+                {textoLaje}
               </span>
             </label>
           );

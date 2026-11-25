@@ -82,7 +82,7 @@ def analisar(
 
     if not disciplinas or "acabamentos" in disciplinas:
         alturas, pend_cortes = _alturas_dos_cortes(cortes or [])
-        itens_ac, pend_ac, resumo_ac = AgenteAcabamentos(r.acabamentos, parametros, alturas).executar(desenho)
+        itens_ac, pend_ac, resumo_ac = AgenteAcabamentos(r.acabamentos, parametros, alturas, len(cortes or [])).executar(desenho)
         if resumo_ac:
             pend_ac += pend_cortes
             resumo_ac["alturas_corte"] = alturas
