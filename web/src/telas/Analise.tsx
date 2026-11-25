@@ -254,7 +254,13 @@ function ParametrosTela({
   const ambientes = [...porNome.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   const pml = acabamentos?.pe_menos_laje;
   const textoLaje = pml != null ? `pé-direito − laje (${num(pml)} m)` : "pé-direito − laje (informe pé-direito e espessura da laje)";
-  const faltando = ambientes.filter((a) => a.corte == null && !(valores[a.parametro] ?? "").trim());
+  // ambiente que já tem altura pelo código de parede (altura_parede_<código>) não falta: marcar
+  // "pé-direito − laje" nele trocaria em silêncio uma altura informada
+  const temPorCodigo = (a: { codigos: Set<string> }) =>
+    [...a.codigos].every((c) => (valores[`altura_parede_${c}`] ?? "").trim() !== "");
+  const faltando = ambientes.filter(
+    (a) => a.corte == null && !(valores[a.parametro] ?? "").trim() && !temPorCodigo(a),
+  );
   const vaos = acabamentos?.vaos ?? [];
   const limite = acabamentos?.limite_vao_m2 ?? 2;
   return (
