@@ -86,16 +86,16 @@ Quando o DXF é uma planta de acabamentos, o agente de acabamentos:
     `QTD-xx-PROPOSTA` no DXF gerado;
   - nada é aceito se a área não bater com o rótulo (5%); o resto vira pendência. Divisas sem
     parede (projeção ou proposta) não entram no perímetro de parede.
-- Parede = perímetro do contorno × altura do revestimento, menos, em cada vão de porta e
-  janela, só a parte que **excede 2 m²** (critério TCPO/SINAPI; vão de até 2 m² entra cheio). Nenhuma perda é aplicada em material
+- Parede = perímetro do contorno × altura do revestimento, menos os vãos de porta e janela com
+  área **acima de 2 m²** (vão de até 2 m² entra cheio). Nenhuma perda é aplicada em material
   nenhum. A altura **não é presumida**: vem do corte, ou da altura do ambiente informada à mão
   (`altura_ambiente_<NOME>` em metros, ou `laje` para usar o pé-direito descontada a espessura da
   laje), ou de `altura_parede_<código>` (metros ou `laje`). Envie cortes com `--corte corte.dxf`;
   quando o corte não representa todos os ambientes da planta, um alerta lista os que faltam para
   preencher à mão. A altura e o peitoril das esquadrias não estão na planta: informe
   `altura_vao_<porta|janela>_<largura em cm>` e, nas janelas, `peitoril_vao_janela_<largura>`
-  (a largura é medida no bloco). O desconto não passa da parte do vão dentro da faixa
-  revestida. Vão que nem com a altura máxima (pé-direito − laje) passa de 2 m² dispensa a altura. No corte, o revestimento é a hachura de padrão GRELHA/cerâmica/porcelanato
+  (a largura é medida no bloco). Na janela, só a parte do vão dentro da faixa revestida é
+  descontada. Vão que nem com a altura máxima (pé-direito − laje) passa de 2 m² dispensa a altura. No corte, o revestimento é a hachura de padrão GRELHA/cerâmica/porcelanato
   na parede vista; a altura vai do piso acabado até a laje ou forro cortado, e o ambiente é o nome
   escrito na faixa. **Alturas tiradas de cortes valem só para os ambientes cortados e precisam de
   conferência.** A altura do corte vale para o ambiente da planta com o mesmo nome e, quando

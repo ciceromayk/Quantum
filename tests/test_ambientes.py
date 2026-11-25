@@ -381,20 +381,16 @@ def test_desconta_so_vao_acima_de_2m2(tmp_path):
     sit = {v["chave"]: v["situacao"] for v in q["vaos"]}
     # porta 0,80 × 2,10 = 1,68 m²: entra cheia; janela 2,00 × 1,20 = 2,40 m²: descontada
     assert sit == {"porta_80": "cheio", "janela_200": "descontado"}
-    # só o que excede 2 m²: 2,40 − 2,00 = 0,40 m² (a janela inteira está na faixa revestida)
-    assert q["desconto_vaos_m2"] == pytest.approx(0.4)
-    assert q["area_liquida_m2"] == pytest.approx(q["perimetro_m"] * 2.5 - 0.4)
+    # desconto só na faixa revestida: de 1,0 (peitoril) a 2,2 (topo da janela), abaixo de 2,5
+    assert q["desconto_vaos_m2"] == pytest.approx(2.0 * 1.2)
+    assert q["area_liquida_m2"] == pytest.approx(q["perimetro_m"] * 2.5 - 2.4)
     it = next(i for i in rel.itens if i.codigo == "ACB-PAREDE-01")
     assert it.quantidade == pytest.approx(q["area_liquida_m2"])
     assert "Sem perdas" in it.observacao
 
-    # janela 2,00 × 1,50 = 3,00 m²: o excedente é 1,00; com revestimento até 1,5 m só 0,5 m
-    # da janela (1,0 a 1,5) fica na faixa, então o desconto é 2,00 × 0,5 = 1,00 (o menor dos dois)
-    rel = analisar(arq, parametros={**par, "altura_vao_janela_200": 1.5, "altura_ambiente_QUARTO": 1.5})
-    assert _parede_quarto(rel)["desconto_vaos_m2"] == pytest.approx(1.0)
-    # revestimento até 1,2 m: na faixa só 2,00 × 0,2 = 0,40, menos que o excedente de 1,00
-    rel = analisar(arq, parametros={**par, "altura_vao_janela_200": 1.5, "altura_ambiente_QUARTO": 1.2})
-    assert _parede_quarto(rel)["desconto_vaos_m2"] == pytest.approx(0.4)
+    # revestimento até 1,5 m: a janela (1,0 a 2,2) só tira a faixa de 1,0 a 1,5
+    rel = analisar(arq, parametros={**par, "altura_ambiente_QUARTO": 1.5})
+    assert _parede_quarto(rel)["desconto_vaos_m2"] == pytest.approx(2.0 * 0.5)
 
     # vão de exatamente 2 m² entra cheio
     rel = analisar(arq, parametros={**par, "altura_vao_janela_200": 1.0})
