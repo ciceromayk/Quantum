@@ -40,7 +40,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e .
+      - run: pip install -e ".[dev]"  # as amostras vêm dos geradores dos testes, que importam pytest
       - run: scripts/preparar_navegador.sh
       - run: python scripts/amostras_navegador.py amostras
       - uses: actions/setup-node@v4
