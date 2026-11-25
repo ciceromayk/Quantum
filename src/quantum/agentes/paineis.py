@@ -144,12 +144,14 @@ def _num(t: str) -> float:
 
 
 class AgentePaineis:
-    def __init__(self, config: dict | None = None, parametros: dict | None = None, pavimento: str = "PAVIMENTO TIPO"):
+    def __init__(self, config: dict | None = None, parametros: dict | None = None, pavimento: str = "PAVIMENTO TIPO",
+                 repeticoes: int = 1):
         cfg = config or {}
         self.mapa = [(c["padrao"], c["especificacao"]) for c in cfg.get("camadas", [])] or CAMADAS_PADRAO
         self.amb_por_esp = {**AMBIENTE_POR_ESPEC, **(cfg.get("ambiente_por_especificacao") or {})}
         self.par = parametros or {}
         self.pavimento = pavimento
+        self.rep = max(1, int(repeticoes or 1))
 
     # ------------------------------------------------------------------ parâmetros
     def _p(self, k: str) -> float | None:
@@ -180,6 +182,10 @@ class AgentePaineis:
 
         for e in msp:
             if e.dxftype() == "INSERT":
+                for a in getattr(e, "attribs", []):  # atributos (ATTRIB) presos ao bloco: virtual_entities não os traz
+                    s = re.sub(r"\s+", " ", (a.dxf.text or "")).strip()
+                    if s:
+                        out.append((s, a.dxf.insert.x, a.dxf.insert.y, float(a.dxf.get("rotation", 0) or 0)))
                 try:
                     for v in e.virtual_entities():
                         add(v)
@@ -235,7 +241,7 @@ class AgentePaineis:
                    for esp, cam, h, pts in brutos]
         caixa = (min(xs), min(ys), max(xs), max(ys))
         textos = self._textos(msp)
-        self._atribuir(trechos, textos, caixa, f, pend, self._chamadas(msp))
+        self._atribuir(trechos, textos, caixa, f, pend, self._chamadas(msp, f))
         linhas, esquadrias = self._linhas(trechos, pend)
         itens = self._itens(linhas)
         resumo = {
@@ -258,9 +264,9 @@ class AgentePaineis:
         return (b.extmin.x, b.extmin.y, b.extmax.x, b.extmax.y) if b.has_data else None
 
     @staticmethod
-    def _chamadas(msp) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-        """Linhas de chamada das notas: (ponta com o círculo, ponta na parede)."""
-        circulos = [(e.dxf.center.x, e.dxf.center.y) for e in msp.query("CIRCLE") if e.dxf.radius < 0.3]
+    def _chamadas(msp, f: float = 1.0) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        """Linhas de chamada das notas: (ponta com o círculo, ponta na parede). f = metros por unidade."""
+        circulos = [(e.dxf.center.x, e.dxf.center.y) for e in msp.query("CIRCLE") if e.dxf.radius * f < 0.3]
         out = []
         for e in msp.query("LINE LWPOLYLINE"):
             if e.dxftype() == "LINE":
@@ -273,9 +279,9 @@ class AgentePaineis:
             else:
                 continue
             for c in circulos:
-                if math.dist(c, a) < 0.05:
+                if math.dist(c, a) * f < 0.05:
                     out.append((a, b))
-                elif math.dist(c, b) < 0.05:
+                elif math.dist(c, b) * f < 0.05:
                     out.append((b, a))
         return out
 
@@ -418,12 +424,12 @@ class AgentePaineis:
             linhas.append({
                 "coluna": nome_col, "pavimento": self.pavimento, "ambiente": j["ambiente"],
                 "classificacao": j["classificacao"], "especificacao": j["especificacao"],
-                "rep": 1, "qtde": len(cols), "perimetro_m": round(j["perimetro"], 4),
+                "rep": self.rep, "qtde": len(cols), "perimetro_m": round(j["perimetro"], 4),
                 "pe_esquerdo": self._p("pe_esquerdo"), "contrapiso": self._p("contrapiso"),
                 "elemento": j["elemento"], "altura_elemento": j["altura_elemento"], "altura_m": h,
                 "area_parede_m2": None if area is None else round(area, 4),
                 "esquadrias": "/".join(descontados), "area_esquadrias_m2": round(area_vaos, 4),
-                "area_total_m2": None if area is None else round(len(cols) * (area - area_vaos), 4),
+                "area_total_m2": None if area is None else round(self.rep * len(cols) * (area - area_vaos), 4),
                 "vaos_lidos": sorted(j["vaos"]), "handles": j["handles"],
             })
         linhas.sort(key=lambda l: (ESPECIFICACOES.index(l["especificacao"]), not l["coluna"].startswith("COLUNA"), l["coluna"]))

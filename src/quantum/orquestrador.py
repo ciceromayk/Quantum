@@ -96,7 +96,7 @@ def analisar(
         rel.acabamentos = resumo_ac
 
     if not disciplinas or "paredes" in disciplinas:
-        itens_p, pend_p, resumo_p = AgentePaineis(r.paineis, parametros, nome_pav).executar(desenho)
+        itens_p, pend_p, resumo_p = AgentePaineis(r.paineis, parametros, nome_pav, int(rep_pav) if isinstance(rep_pav, (int, float)) else 1).executar(desenho)
         rel.itens += itens_p
         rel.pendencias += pend_p
         rel.paineis = resumo_p

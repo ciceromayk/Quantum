@@ -99,3 +99,35 @@ def test_sem_quadro_vira_pendencia(tmp_path):
     assert any("P15" in m for m in bloq)
     ids = {e["id"] for e in rel.paineis["esquadrias"]}
     assert ids == {"P15", "P01"}
+
+
+def test_repeticoes_do_pavimento(tmp_path):
+    arq = tmp_path / "falada.dxf"
+    criar_planta_falada(arq)
+    rel = analisar(arq, parametros={**PAR, "_repeticoes": 3})
+    st = next(l for l in rel.paineis["linhas"] if l["especificacao"] == "PERFIL 70MM + ST + ST")
+    assert st["rep"] == 3 and st["area_total_m2"] == pytest.approx(3 * 2 * 4 * 2.63)
+    it = {i.codigo: i.quantidade for i in rel.itens if i.disciplina == "paredes"}
+    assert it["INS-MARCACAO-DE-TIJOLO-CERAMICO-(M)"] == pytest.approx(3 * 23.0)
+
+
+def test_id_em_atributo_e_chamada_em_mm(tmp_path):
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 4
+    msp = doc.modelspace()
+    blk = doc.blocks.new("ETIQ")
+    blk.add_attdef("ID", (0, 0), dxfattribs={"height": 200})
+    msp.add_lwpolyline([(0, 3000), (20000, 3000)], dxfattribs={"layer": "0_TIJOLO CERAMICO_14CM"})
+    msp.add_blockref("ETIQ", (5000, 3300)).add_auto_attribs({"ID": "P15"})
+    msp.add_lwpolyline([(0, 6000), (3000, 6000)], dxfattribs={"layer": "0_TIJOLO CERAMICO_19CM"})
+    msp.add_text("H=2,28M", dxfattribs={"insert": (6000, 8000), "height": 200, "layer": "OBSERVAÇÕES"})
+    msp.add_line((7200, 8100), (1500, 6000), dxfattribs={"layer": "OBSERVAÇÕES"})
+    msp.add_circle((7200, 8100), 120, dxfattribs={"layer": "OBSERVAÇÕES"})
+    arq = tmp_path / "mm.dxf"
+    doc.saveas(arq)
+    rel = analisar(arq, parametros=PAR)
+    linhas = rel.paineis["linhas"]
+    t14 = next(l for l in linhas if l["especificacao"] == "ALVENARIA TIJOLO DE 14CM")
+    assert t14["esquadrias"] == "P15" and t14["perimetro_m"] == pytest.approx(20.0)
+    t19 = next(l for l in linhas if l["especificacao"] == "ALVENARIA TIJOLO DE 19CM")
+    assert t19["elemento"] == "VIGA" and t19["altura_m"] == pytest.approx(2.23)
