@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .agentes import AgenteAcabamentos, AgenteAuditor, AgenteDisciplina, AgenteOrcamentista
+from .agentes import AgenteAcabamentos, AgenteAuditor, AgenteDisciplina, AgenteOrcamentista, AgentePaineis
 from .ingestao import carregar
 from .modelos import Pendencia, Relatorio, Severidade
 from .regras import carregar_regras
@@ -62,7 +62,12 @@ def analisar(
     disciplinas: list[str] | None = None,
     cortes: list[str | Path] | None = None,
 ) -> Relatorio:
-    parametros = parametros or {}
+    parametros = dict(parametros or {})
+    # dados do pavimento vindos do app (não são medidas): nome e repetições
+    nome_pav = str(parametros.pop("_pavimento", "") or "PAVIMENTO TIPO")
+    rep_pav = parametros.pop("_repeticoes", None)
+    if isinstance(rep_pav, (int, float)) and rep_pav > 1:
+        nome_pav += f" [x{int(rep_pav)}]"
     r = carregar_regras(regras)
     desenho = carregar(arquivo, unidade=unidade)
     rel = Relatorio(desenho=desenho, parametros=parametros, bdi=bdi)
@@ -89,6 +94,12 @@ def analisar(
         rel.itens += itens_ac
         rel.pendencias += pend_ac
         rel.acabamentos = resumo_ac
+
+    if not disciplinas or "paredes" in disciplinas:
+        itens_p, pend_p, resumo_p = AgentePaineis(r.paineis, parametros, nome_pav).executar(desenho)
+        rel.itens += itens_p
+        rel.pendencias += pend_p
+        rel.paineis = resumo_p
 
     pend, nao_class = AgenteAuditor(r).auditar(desenho, usadas, medidas, rotuladas)
     rel.pendencias = pend + rel.pendencias

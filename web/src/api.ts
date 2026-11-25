@@ -100,6 +100,21 @@ export interface Acabamentos {
   vaos?: TipoVao[];
 }
 
+export interface EsquadriaPaineis {
+  id: string;
+  largura?: number;
+  altura?: number;
+  peitoril?: number;
+  area_m2: number | null;
+}
+
+export interface Paineis {
+  pavimento: string;
+  linhas: Record<string, unknown>[];
+  esquadrias: EsquadriaPaineis[];
+  aviso: string;
+}
+
 /** Parâmetro de altura que aceita "teto"/"laje" (pé-direito − espessura da laje) no lugar de um número. */
 export const aceitaLaje = (k: string) => k.startsWith("altura_parede_") || k.startsWith("altura_ambiente_");
 
@@ -140,6 +155,7 @@ export interface Resultado {
   camadas_nao_classificadas: Record<string, number>;
   parametros: Parametros;
   acabamentos?: Acabamentos | Record<string, never>;
+  paineis?: Paineis | Record<string, never>;
   aviso: string;
 }
 
@@ -180,6 +196,8 @@ export const AVISO =
 
 const PARAMETROS_CONHECIDOS: Record<string, string> = {
   pe_direito: "Pé-direito (m)",
+  pe_esquerdo: "Pé-esquerdo, piso a piso (m), para paredes e painéis",
+  contrapiso: "Espessura do contrapiso (m)",
   altura_pilar: "Altura do lance de pilar (m)",
   espessura_laje: "Espessura da laje (m)",
 };
@@ -276,7 +294,7 @@ function motor(): Worker {
 
 function rodarNoMotor(
   dxf: Blob,
-  parametros: Parametros,
+  parametros: Record<string, number | string>,
   unidade: string | null,
   cortes: { nome: string; dados: Blob }[],
   aoProgredir: (etapa: string) => void,
@@ -324,7 +342,9 @@ async function processar(analiseId: number) {
     const cortes = (await banco.todos<CorteReg>("cortes"))
       .filter((c) => c.pavimento_id === pav.id)
       .map((c) => ({ nome: c.nome, dados: comoBlob(c.dados) }));
-    const saida = await rodarNoMotor(dxf, pav.parametros, pav.unidade, cortes, (etapa) => {
+    // nome e repetições do pavimento vão para a planilha padrão de paredes (não são medidas)
+    const params = { ...pav.parametros, _pavimento: pav.nome, _repeticoes: pav.repeticoes };
+    const saida = await rodarNoMotor(dxf, params, pav.unidade, cortes, (etapa) => {
       atualizarAnalise(analiseId, { etapa });
     });
     await banco.gravar("relatorios", saida, analiseId);
@@ -449,7 +469,7 @@ export const api = {
     const p = exigir(await banco.obter<PavimentoReg>("pavimentos", id), "Pavimento");
     for (const [k, v] of Object.entries(valores)) {
       if ((v === "teto" || v === "laje") && aceitaLaje(k)) continue;
-      if (typeof v === "number" && v === 0 && k.startsWith("peitoril_vao_")) continue; // janela rente ao piso
+      if (typeof v === "number" && v === 0 && (k.startsWith("peitoril_vao_") || /^vao_.+_peitoril$/.test(k))) continue; // rente ao piso
       if (!(typeof v === "number" && v > 0 && v <= 100)) throw new Error(`${k} deve estar entre 0 e 100 metros`);
     }
     await banco.gravar("pavimentos", { ...p, parametros: valores, unidade });

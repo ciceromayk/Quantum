@@ -120,6 +120,7 @@ class Relatorio:
     camadas_nao_classificadas: dict[str, int] = field(default_factory=dict)
     parametros: dict[str, float | str] = field(default_factory=dict)
     acabamentos: dict = field(default_factory=dict)  # resumo do agente de acabamentos (ambientes, catálogo)
+    paineis: dict = field(default_factory=dict)  # planilha padrão de paredes e painéis (planta falada)
     aviso: str = AVISO_ESTIMATIVA
 
     @property

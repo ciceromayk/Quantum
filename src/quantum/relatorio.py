@@ -165,8 +165,116 @@ def para_xlsx(rel: Relatorio, caminho: str | Path) -> None:
         w.append([])
         w.append(["Só vãos de porta e janela com área acima de 2 m² são descontados. Sem perdas."])
 
+    if rel.paineis.get("linhas"):
+        _folhas_paineis(wb, rel)
+
     for folha in wb.worksheets[1:]:
         for c in folha[1]:
             c.font = Font(bold=True)
         folha.freeze_panes = "A2"
     wb.save(caminho)
+
+
+COLUNAS_PAINEIS = [
+    "PROJETO REFERÊNCIA", "PLANTA FALADA", "LOCAL", "TIPO DE APARTAMENTO", "PAVIMENTO", "AMBIENTE",
+    "CLASSIFICAÇÃO P/ LANÇAMENTO", "ESPECIFICAÇÃO", "REP (X)", "QTDE", "PERÍMETRO (M)",
+    "ALTURA PÉ ESQUERDO (PISO A PISO) (M)", "ALTURA CONTRAPISO (M)", "ELEMENTO ESTRUTURAL",
+    "ALTURA DO ELEMENTO ESTRUTURAL (LAJE OU VIGA) (M)", "ALTURA (M)", "ÁREA DA PAREDE (M2)", "ESQUADRIAS",
+    "ÁREAS DE ESQUADRIAS (M2)", "ÁREA DE DESCONTOS (M2)", "ÁREA TOTAL (M2)", "MARCAÇÃO DRYWALL (M2)",
+    "CHAPA ST (M2)", "CHAPA RU (M2)", "CHAPA GR (M2)", "CHAPA METÁLICA PARA REFORÇO (UND)",
+    "ESTRUTURA METÁLICA DRYWALL DE 48MM (M2)", "ESTRUTURA METÁLICA DRYWALL DE 70MM (M2)",
+    "ESTRUTURA METÁLICA STEEL FRAME 90MM (M2)", "ISOLAMENTO ACÚSTICO (M2)", "CANTONEIRA EM DRYWALL (M)",
+    "MARCAÇÃO DE TIJOLO CERÂMICO (M)", "TIJOLO CERÂMICO 9CM (M2)", "TIJOLO CERÂMICO 14CM (M2)",
+    "TIJOLO CERÂMICO 19CM (M2)", "MARCAÇÃO DE BLOCO DE CONCRETO (M)", "BLOCO DE CONCRETO DE 14CM",
+]
+# colunas somadas no Resumo (como a tabela dinâmica da planilha padrão)
+RESUMO_PAINEIS = ["V", "AA", "AB", "AC", "Y", "X", "W", "AJ", "AK", "AF", "AG", "AH", "AI"]
+
+
+def _folhas_paineis(wb, rel: Relatorio) -> None:
+    """Planilha padrão de paredes e painéis, com as mesmas colunas e fórmulas do modelo do escritório."""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    from .agentes.paineis import faces, perfil
+
+    p = rel.paineis
+    ws = wb.create_sheet("Paredes e Paineis")
+    arq = Path(rel.desenho.arquivo).name
+    ws.append(["QUANTITATIVO DE PAREDES E PAINÉIS - " + p.get("pavimento", "")])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append([rel.aviso])
+    ws.append(["Descontos: vãos com área maior que 2,00 m² descontam a área total. Sem perdas. Coluna e ambiente "
+               "atribuídos automaticamente pela planta falada: confira."])
+    cab = 5
+    for i, t in enumerate(COLUNAS_PAINEIS, start=1):
+        c = ws.cell(cab, i, t)
+        c.font = Font(bold=True)
+        c.alignment = Alignment(wrap_text=True, vertical="center")
+        c.fill = PatternFill("solid", fgColor="DDEBF7")
+    ws.row_dimensions[cab].height = 60
+    r = cab
+    for l in p["linhas"]:
+        r += 1
+        esp = l["especificacao"]
+        fc = faces(esp)
+        pf = perfil(esp)
+        mult = lambda n: f"=U{r}*{n}" if n else 0
+        cm = esp.split("DE ")[-1].replace("CM", "") if esp.startswith("ALVENARIA") else None
+        valores = [
+            "", arq, "", l["coluna"], l["pavimento"], l["ambiente"], l["classificacao"], esp, l["rep"], l["qtde"],
+            l["perimetro_m"], l["pe_esquerdo"], l["contrapiso"], l["elemento"], l["altura_elemento"],
+            f"=L{r}-M{r}-O{r}", f"=K{r}*P{r}", l["esquadrias"] or None, l["area_esquadrias_m2"], f"=S{r}",
+            f"=I{r}*J{r}*(Q{r}-T{r})", f"=SUM(AA{r}:AC{r})",
+            mult(fc.get("ST", 0)), mult(fc.get("RU", 0)), mult(fc.get("GR", 0)), None,
+            f"=U{r}" if pf == "48" else None, f"=U{r}" if pf == "70" else None, f"=U{r}" if pf == "90" else None,
+            None, None,
+            f"=I{r}*J{r}*K{r}" if cm else None,
+            f"=U{r}" if cm == "9" else None, f"=U{r}" if cm == "14" else None, f"=U{r}" if cm == "19" else None,
+            f"=I{r}*J{r}*K{r}" if esp.startswith("BLOCO") else None, f"=U{r}" if esp.startswith("BLOCO") else None,
+        ]
+        for i, v in enumerate(valores, start=1):
+            ws.cell(r, i, v)
+    fim = r
+    ws.freeze_panes = ws.cell(cab + 1, 9)
+    for i in range(1, len(COLUNAS_PAINEIS) + 1):
+        ws.column_dimensions[get_column_letter(i)].width = 14
+    for col in ("D", "F", "H", "R"):
+        ws.column_dimensions[col].width = 26
+    # quadro de esquadrias ao lado, como no modelo
+    c0 = 42  # AP
+    ws.cell(cab - 1, c0, "ESQUADRIAS (quadro informado)").font = Font(bold=True)
+    for i, t in enumerate(["ID", "L (m)", "A (m)", "P (m)", "ÁREA (m²)", "DESCONTA? (> 2 m²)"]):
+        ws.cell(cab, c0 + i, t).font = Font(bold=True)
+    for k, e in enumerate(p.get("esquadrias", []), start=cab + 1):
+        ws.cell(k, c0, e["id"])
+        ws.cell(k, c0 + 1, e.get("largura"))
+        ws.cell(k, c0 + 2, e.get("altura"))
+        ws.cell(k, c0 + 3, e.get("peitoril"))
+        L, A = get_column_letter(c0 + 1), get_column_letter(c0 + 2)
+        ws.cell(k, c0 + 4, f'=IF(AND(ISNUMBER({L}{k}),ISNUMBER({A}{k})),{L}{k}*{A}{k},"")')
+        ws.cell(k, c0 + 5, f'=IF(ISNUMBER({get_column_letter(c0 + 4)}{k}),IF({get_column_letter(c0 + 4)}{k}>2,"SIM","NÃO"),"falta no quadro")')
+
+    rs = wb.create_sheet("Resumo Paredes")
+    rs.append(["RESUMO - PAREDES E PAINÉIS - " + p.get("pavimento", "")])
+    rs["A1"].font = Font(bold=True, size=13)
+    rs.append([])
+    nomes = {get_column_letter(i): t for i, t in enumerate(COLUNAS_PAINEIS, start=1)}
+    rs.append(["Classificação"] + [nomes[c] for c in RESUMO_PAINEIS])
+    for c in rs[3]:
+        c.font = Font(bold=True)
+        c.alignment = Alignment(wrap_text=True)
+    rs.row_dimensions[3].height = 60
+    lin = cab + 1
+    for cla in sorted({l["classificacao"] for l in p["linhas"]}):
+        k = rs.max_row + 1
+        rs.cell(k, 1, cla)
+        for j, c in enumerate(RESUMO_PAINEIS, start=2):
+            rs.cell(k, j, f"=SUMIFS('Paredes e Paineis'!{c}{lin}:{c}{fim},'Paredes e Paineis'!G{lin}:G{fim},A{k})")
+    k = rs.max_row + 1
+    rs.cell(k, 1, "Total Geral").font = Font(bold=True)
+    for j, c in enumerate(RESUMO_PAINEIS, start=2):
+        rs.cell(k, j, f"=SUM('Paredes e Paineis'!{c}{lin}:{c}{fim})").font = Font(bold=True)
+    rs.column_dimensions["A"].width = 22
+    for j in range(2, len(RESUMO_PAINEIS) + 2):
+        rs.column_dimensions[get_column_letter(j)].width = 16
