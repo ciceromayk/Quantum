@@ -178,3 +178,10 @@ def test_nomes_de_corte_equivalentes_com_a_mesma_altura_valem():
     ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COZ": 2.49})
     assert ag.conflitos == {}
     assert ag._altura_de_corte("COZ") == 2.49
+
+
+def test_conflito_parecido_barra_o_casamento_por_aproximacao():
+    """Com "COZ." 2,49 e "COZ" 2,60 no corte, "COZINHA GOURMET" não pode virar a resposta."""
+    ag = AgenteAcabamentos({}, {}, {"COZ.": 2.49, "COZ": 2.60, "COZINHA GOURMET": 2.70})
+    assert ag._altura_de_corte("COZ. / SERV.") is None
+    assert ag.aproximados == {}

@@ -100,6 +100,7 @@ class AgenteAcabamentos:
         for k, v in (alturas_corte or {}).items():
             juntos.setdefault(_chave(k), []).append((v, k))
         uma_altura = lambda v: len({round(h, 3) for h, _ in v}) == 1
+        self.lidas_corte = {c: sorted(v) for c, v in juntos.items()}  # tudo, inclusive o que conflita
         self.alturas_corte = {c: sorted(v)[0] for c, v in juntos.items() if uma_altura(v)}
         self.conflitos = {c: sorted(v) for c, v in juntos.items() if not uma_altura(v)}
         self.aproximados: dict[str, str] = {}  # ambiente da planta -> nome do corte usado
@@ -378,10 +379,13 @@ class AgenteAcabamentos:
         if exato is not None:
             return exato[0]
         meus = _partes(nome)
+        # a busca por aproximação olha tudo o que foi lido, inclusive os nomes que conflitam
+        # entre si: um conflito parecido tem de barrar o casamento, não desaparecer dele
         achados = [
             (h, bruto)
-            for chave, (h, bruto) in self.alturas_corte.items()
+            for chave, vals in self.lidas_corte.items()
             if any(_mesmo_pedaco(x, y) for x in meus for y in _partes(chave))
+            for h, bruto in vals
         ]
         if not achados or len({round(h, 3) for h, _ in achados}) != 1:
             return None
