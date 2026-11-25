@@ -64,6 +64,9 @@ ESPECIFICACOES = [e for _, e in CAMADAS_PADRAO]
 
 RX_ID_VAO = re.compile(r"^(P|J|V|PE|PJ|PV|JA|BS)\d{0,3}$")
 RX_H = re.compile(r"^H\s*=\s*(\d+[.,]\d+)\s*M?$", re.IGNORECASE)
+# parede baixa com a altura escrita no desenho: "MURETA h=0,20m (ACABADO)", "PEITORIL h=1,20m"
+RX_PAREDE_BAIXA = re.compile(r"\b(MURETA|PEITORIL|GUARDA\s*-?\s*CORPO)\b.*?\bH\s*=\s*(\d+(?:[.,]\d+)?)\s*M?\b", re.IGNORECASE)
+DIST_TEXTO_ALTURA_M = 1.0
 RX_AREA = re.compile(r"^\d+[.,]\d+$")
 NAO_NOME = re.compile(r"^(\d|D$|M$|M2$|M²$|B$|A$|PCF$|UND|COLUNA|PROJE|A=|ST-|GR-|RU-|LEGENDA|DESCRI|LAYERS)")
 
@@ -112,7 +115,25 @@ class Trecho:
     ambiente: str = ""
     classificacao: str = "GERAL"
     altura_livre: float | None = None  # "H=2,28M" anotado junto da parede
+    altura_texto: float | None = None  # parede baixa: altura escrita no desenho (MURETA h=0,20m)
+    texto_altura: str = ""
     vaos: list[str] = field(default_factory=list)
+
+
+def alturas_de_texto(textos) -> tuple[list[tuple[float, str, float, float]], list[str]]:
+    """Textos de parede baixa com altura: (altura m, texto, x, y). Também devolve os textos
+    ambíguos (guarda-corpo + mureta com uma altura só: a altura é do guarda-corpo)."""
+    ok, ambiguos = [], []
+    for t, x, y, *_ in textos:
+        m = RX_PAREDE_BAIXA.search(t)
+        if not m:
+            continue
+        k = _chave(t)
+        if re.search(r"GUARDA\s*-?\s*CORPO", k) and "MURETA" in k and len(re.findall(r"\bH\s*=", k)) == 1:
+            ambiguos.append(t)
+            continue
+        ok.append((_num(m.group(2)), t, x, y))
+    return ok, ambiguos
 
 
 def _dist_ponto_polilinha(p, pts) -> float:
@@ -298,7 +319,7 @@ class AgentePaineis:
         nomes = []
         for t, x, y, _ in textos:
             k = _chave(t)
-            if len(k) < 2 or NAO_NOME.match(k) or RX_ID_VAO.match(k) or RX_H.match(t) or len(k) > 30:
+            if len(k) < 2 or NAO_NOME.match(k) or RX_ID_VAO.match(k) or RX_H.match(t) or len(k) > 30 or RX_PAREDE_BAIXA.search(t):
                 continue
             perto = [(math.hypot(ax - x, ay - y), a) for ax, ay, a in areas if 0 < y - ay < 1.0 / f and abs(ax - x) < 1.5 / f]
             area = min(perto)[1] if perto else None
@@ -351,6 +372,26 @@ class AgentePaineis:
             dmin, i = min(cand)
             if dmin <= 1.0:
                 trechos[i].vaos.append(vid)
+        # parede baixa: texto MURETA/PEITORIL/GUARDA-CORPO com h= a até 1 m da parede
+        baixas, ambiguos = alturas_de_texto(textos)
+        for h, t, x, y in baixas:
+            cand = [(_dist_ponto_polilinha((x, y), tr.pontos) * f, i) for i, tr in enumerate(trechos)]
+            if not cand:
+                break
+            dmin, i = min(cand)
+            if dmin <= DIST_TEXTO_ALTURA_M:
+                trechos[i].altura_texto, trechos[i].texto_altura = h, re.sub(r"\s+", " ", t).strip()
+        usados = [tr for tr in trechos if tr.altura_texto is not None]
+        if usados:
+            lista = "; ".join(sorted({f"{tr.ambiente or '?'}: {tr.texto_altura}" for tr in usados}))
+            pend.append(Pendencia(DISC, Severidade.ALERTA,
+                                  f"{len(usados)} parede(s) baixa(s) com altura lida do TEXTO DO DESENHO (não do pé-esquerdo): {lista}.",
+                                  acao_sugerida="Confira se o texto se refere a essa parede e se a altura é a do trecho de parede."))
+        if ambiguos:
+            pend.append(Pendencia(DISC, Severidade.ALERTA,
+                                  "Texto com guarda-corpo e mureta e uma altura só (a altura é do guarda-corpo): " + "; ".join(sorted(set(ambiguos)))
+                                  + ". A altura não foi usada na mureta.",
+                                  acao_sugerida="Escreva a altura da mureta no desenho (MURETA h=…) ou ajuste a altura na planilha."))
         if any(t.altura_livre for t in trechos):
             pend.append(Pendencia(DISC, Severidade.ALERTA,
                                   f"{sum(1 for t in trechos if t.altura_livre)} parede(s) com altura anotada na planta (H=…): "
@@ -373,6 +414,8 @@ class AgentePaineis:
     # ------------------------------------------------------------------ linhas da planilha
     def _altura(self, tr: Trecho) -> tuple[float | None, str, float | None]:
         """(altura, elemento estrutural, altura do elemento)."""
+        if tr.altura_texto is not None:  # parede baixa: a altura vem do texto do desenho
+            return tr.altura_texto, f"{tr.texto_altura} (TEXTO DO DESENHO)", 0.0
         pe, cp, laje = self._p("pe_esquerdo"), self._p("contrapiso"), self._p("espessura_laje")
         if pe is None or cp is None:
             return None, "", None
@@ -425,8 +468,12 @@ class AgentePaineis:
                 "coluna": nome_col, "pavimento": self.pavimento, "ambiente": j["ambiente"],
                 "classificacao": j["classificacao"], "especificacao": j["especificacao"],
                 "rep": self.rep, "qtde": len(cols), "perimetro_m": round(j["perimetro"], 4),
-                "pe_esquerdo": self._p("pe_esquerdo"), "contrapiso": self._p("contrapiso"),
+                # parede baixa: na planilha, P = L − M − O dá a altura do texto (L = h, M = O = 0)
+                **({"pe_esquerdo": h, "contrapiso": 0.0} if j["elemento"].endswith("(TEXTO DO DESENHO)") else
+                   {"pe_esquerdo": self._p("pe_esquerdo"), "contrapiso": self._p("contrapiso")}),
                 "elemento": j["elemento"], "altura_elemento": j["altura_elemento"], "altura_m": h,
+                "origem_altura": "texto do desenho" if j["elemento"].endswith("(TEXTO DO DESENHO)") else
+                "nota H= (viga)" if j["elemento"] == "VIGA" else "pé-esquerdo − contrapiso − laje",
                 "area_parede_m2": None if area is None else round(area, 4),
                 "esquadrias": "/".join(descontados), "area_esquadrias_m2": round(area_vaos, 4),
                 "area_total_m2": None if area is None else round(self.rep * len(cols) * (area - area_vaos), 4),

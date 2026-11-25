@@ -77,6 +77,19 @@ def para_markdown(rel: Relatorio) -> str:
                 f"| {_fmt(a['perimetro_m'])} | {_fmt(a['area_bruta_m2'])} | {_fmt(a['desconto_vaos_m2'])} | {_fmt(a['area_liquida_m2'])} |"
             )
 
+    pl = (rel.paineis or {}).get("linhas") or []
+    if pl:
+        L += ["", "### Paredes e painéis por ambiente (planta falada)", "",
+              "Altura de cada linha e de onde ela veio. Parede baixa (mureta, peitoril) usa a altura escrita no desenho.", "",
+              "| Coluna | Ambiente | Sistema | Perímetro (m) | Altura (m) | Origem da altura | Área total (m²) |",
+              "|---|---|---|---:|---:|---|---:|"]
+        for l in pl:
+            origem = l.get("origem_altura", "")
+            if origem == "texto do desenho":
+                origem = f"texto do desenho: {l['elemento'].replace(' (TEXTO DO DESENHO)', '')}"
+            L.append(f"| {l['coluna']} | {l['ambiente']} | {l['especificacao']} | {_fmt(l['perimetro_m'])} | "
+                     f"{_fmt(l['altura_m'])} | {origem} | {_fmt(l['area_total_m2'])} |")
+
     if rel.orcamento:
         L += ["", "## Orçamento (estimativa)", "", "| Item | Ref. | Descrição | Qtd. | Un. | Preço unit. | Total | Fonte / data-base |", "|---|---|---|---:|---|---:|---:|---|"]
         for o in rel.orcamento:

@@ -131,3 +131,36 @@ def test_id_em_atributo_e_chamada_em_mm(tmp_path):
     assert t14["esquadrias"] == "P15" and t14["perimetro_m"] == pytest.approx(20.0)
     t19 = next(l for l in linhas if l["especificacao"] == "ALVENARIA TIJOLO DE 19CM")
     assert t19["elemento"] == "VIGA" and t19["altura_m"] == pytest.approx(2.23)
+
+
+def test_parede_baixa_pelo_texto_do_desenho(tmp_path):
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (10, 0)], dxfattribs={"layer": "0_TIJOLO CERAMICO_14CM"})  # mureta
+    msp.add_lwpolyline([(0, 5), (10, 5)], dxfattribs={"layer": "0_TIJOLO CERAMICO_14CM"})  # parede cheia
+    msp.add_lwpolyline([(0, 10), (10, 10)], dxfattribs={"layer": "0_TIJOLO CERAMICO_19CM"})  # guarda-corpo ambíguo
+    msp.add_text("MURETA h=0,20m (ACABADO)", dxfattribs={"insert": (4, 0.3), "height": 0.15})
+    msp.add_text("MURETA h=0,20m", dxfattribs={"insert": (4, 6.5), "height": 0.15})  # a 1,5 m: não vale
+    msp.add_text("GUARDA-CORPO h=1,00m + MURETA", dxfattribs={"insert": (4, 10.3), "height": 0.15})
+    arq = tmp_path / "baixa.dxf"
+    doc.saveas(arq)
+    rel = analisar(arq, parametros=PAR)
+    linhas = rel.paineis["linhas"]
+    baixa = next(l for l in linhas if l["origem_altura"] == "texto do desenho")
+    assert baixa["altura_m"] == pytest.approx(0.20) and baixa["perimetro_m"] == pytest.approx(10.0)
+    assert baixa["area_total_m2"] == pytest.approx(2.0)
+    assert "MURETA h=0,20m (ACABADO)" in baixa["elemento"]
+    cheias = [l for l in linhas if l["origem_altura"] != "texto do desenho"]
+    assert cheias and all(l["altura_m"] == pytest.approx(2.63) for l in cheias)  # sem texto perto: pé-esquerdo − contrapiso − laje
+    msgs = " ".join(p.mensagem for p in rel.pendencias if p.disciplina == "paredes")
+    assert "TEXTO DO DESENHO" in msgs and "guarda-corpo e mureta" in msgs
+    from quantum.relatorio import para_markdown
+
+    assert "texto do desenho: MURETA h=0,20m (ACABADO)" in para_markdown(rel)
+    para_xlsx(rel, tmp_path / "s.xlsx")
+    from openpyxl import load_workbook
+
+    ws = load_workbook(tmp_path / "s.xlsx")["Paredes e Paineis"]
+    r = next(r for r in range(6, ws.max_row + 1) if "MURETA" in str(ws.cell(r, 14).value))
+    assert ws.cell(r, 12).value == pytest.approx(0.20) and ws.cell(r, 13).value == 0 and ws.cell(r, 15).value == 0

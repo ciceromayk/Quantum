@@ -110,6 +110,36 @@ export default function AnaliseTela({ id }: { id: number }) {
               ))}
             </tbody>
           </table>
+          {!!falada.paredes_baixas?.length && (
+            <>
+              <h3>Paredes baixas (altura lida do texto do desenho)</h3>
+              <p className="discreto">
+                Texto de mureta, peitoril ou guarda-corpo com h= a até 1 m da parede. Confira se o texto é mesmo dessa parede.
+              </p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ambiente</th>
+                    <th>Texto do desenho</th>
+                    <th>Altura (m)</th>
+                    <th>Comprimento (m)</th>
+                    <th>Sistema</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {falada.paredes_baixas.map((b, i) => (
+                    <tr key={i}>
+                      <td>{b.ambientes.join(" | ") || "?"}</td>
+                      <td>{b.texto}</td>
+                      <td>{num(b.altura_m)}</td>
+                      <td>{num(b.comprimento_m)}</td>
+                      <td>{b.especificacao}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </details>
       )}
 
