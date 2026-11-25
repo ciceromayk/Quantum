@@ -60,3 +60,22 @@ def test_gera_dxf_e_vira_planilha(tmp_path):
     rel = analisar(saida, parametros={"pe_esquerdo": 2.88, "contrapiso": 0.05, "espessura_laje": 0.20})
     esp = {l["especificacao"] for l in rel.paineis["linhas"]}
     assert {"PERFIL 70MM + ST + RU", "ALVENARIA TIJOLO DE 14CM"} <= esp
+
+
+def test_mureta_com_texto_e_sem_texto(tmp_path):
+    doc = ezdxf.new("R2018")
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    parede(msp, "DRY WALL", 0, 0, 10, 0, (-0.095, 0.095))  # 19 cm em drywall: fora do padrão
+    parede(msp, "DRY WALL", 0, 5, 10, 5, (-0.095, 0.095))
+    msp.add_text("MURETA h=0,20m (ACABADO)", dxfattribs={"insert": (4, 0.25), "height": 0.15, "layer": "TEXTO"})
+    arq, saida = tmp_path / "arq.dxf", tmp_path / "falada.dxf"
+    doc.saveas(arq)
+    r = gerar(arq, saida)
+    assert len(r["paredes_baixas"]) == 1
+    b = r["paredes_baixas"][0]
+    assert b["altura_m"] == pytest.approx(0.20) and b["especificacao"] == "A CLASSIFICAR"
+    assert b["comprimento_m"] == pytest.approx(10.0, abs=0.3)
+    notas = [e.dxf.text for e in ezdxf.readfile(saida).modelspace().query("TEXT") if e.dxf.layer == CAMADA_INFERIDO]
+    assert any("parede baixa" in n and "texto do desenho" in n for n in notas)
+    assert sum("parede baixa" in n for n in notas) == 1  # a outra, sem texto, só fica a classificar

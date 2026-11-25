@@ -185,6 +185,8 @@ export interface PlantaFalada {
   rotulos: number;
   aviso: string;
   por_sistema: { especificacao: string; comprimento_m: number; trechos: number; inferidos: number }[];
+  /** Paredes baixas com a altura lida do texto do desenho (MURETA/PEITORIL/GUARDA-CORPO h=…). */
+  paredes_baixas?: { texto: string; altura_m: number; comprimento_m: number; especificacao: string; ambientes: string[] }[];
 }
 
 /** Desenho do Model simplificado para o visualizador (metros). */

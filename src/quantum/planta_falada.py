@@ -34,7 +34,8 @@ from shapely import set_precision, union_all
 from shapely.ops import linemerge
 from shapely.strtree import STRtree
 
-from .agentes.paineis import CAMADAS_PADRAO, NAO_NOME, RX_ID_VAO, _chave
+from .agentes.paineis import (CAMADAS_PADRAO, DIST_TEXTO_ALTURA_M, NAO_NOME, RX_ID_VAO, AgentePaineis, _chave,
+                              _dist_ponto_polilinha, alturas_de_texto)
 from .ingestao import abrir_documento, carregar
 
 # especificação -> camada gravada (mesma grafia da planta falada do escritório)
@@ -87,6 +88,8 @@ class Parede:
     especificacao: str | None = None
     lados: tuple[str, str] = ("", "")
     inferido: list[str] = field(default_factory=list)
+    altura_texto: float | None = None  # parede baixa: altura escrita no desenho (MURETA h=0,20m)
+    texto_altura: str = ""
 
     @property
     def comprimento_m(self) -> float:
@@ -429,6 +432,12 @@ def detectar_paredes(caminho: str | Path, config: dict | None = None, unidade: s
         pa, pb = (meio.x + nx * off, meio.y + ny * off), (meio.x - nx * off, meio.y - ny * off)
         p.lados = (_lado(pa, rotulos, arvore, uniao), _lado(pb, rotulos, arvore, uniao)) if arvore else ("", "")
         classificar(p)
+    # parede baixa: texto MURETA/PEITORIL/GUARDA-CORPO com h= a até 1 m do eixo (mesma regra da planilha)
+    baixas, _ = alturas_de_texto(AgentePaineis()._textos(msp))
+    for h, t, x, y in baixas:
+        cand = [(_dist_ponto_polilinha((x * f, y * f), p.pontos), k) for k, p in enumerate(paredes)]
+        if cand and (m := min(cand))[0] <= DIST_TEXTO_ALTURA_M:
+            paredes[m[1]].altura_texto, paredes[m[1]].texto_altura = h, re.sub(r"\s+", " ", t).strip()
     resumo = {"fator_m": f, "unidade": d.unidade, "rotulos": len(rotulos), "arquivo": str(caminho)}
     return paredes, resumo
 
@@ -450,10 +459,13 @@ def gravar(caminho_origem: str | Path, paredes: list[Parede], saida: str | Path,
         cam = CAMADA_DA_ESPEC[p.especificacao] if p.especificacao else CAMADA_A_CLASSIFICAR
         pts = [(x * inv, y * inv) for x, y in p.pontos]
         msp.add_lwpolyline(pts, dxfattribs={"layer": cam, "const_width": 0.03 * inv})
-        if p.inferido or not p.especificacao:
+        if p.inferido or not p.especificacao or p.altura_texto is not None:
             l = LineString(pts)
             m = l.interpolate(0.5, normalized=True)
-            msg = "?" + "; ".join(p.inferido) if p.inferido else "? classificar"
+            partes = list(p.inferido) if p.inferido else ([] if p.especificacao else ["classificar"])
+            if p.altura_texto is not None:
+                partes.insert(0, f"parede baixa h={p.altura_texto:.2f} m (texto do desenho: {p.texto_altura})".replace(".", ",", 1))
+            msg = "?" + "; ".join(partes)
             msp.add_text(msg[:120], dxfattribs={"layer": CAMADA_INFERIDO, "height": alt, "insert": (m.x, m.y)})
     # legenda fora do desenho (o leitor da planta falada ignora o que estiver dentro dela)
     xs = [x for p in paredes for x, _ in p.pontos] or [0.0]
@@ -490,6 +502,9 @@ def gerar(caminho: str | Path, saida: str | Path, config: dict | None = None, un
     paredes, info = detectar_paredes(caminho, config, unidade, desenho)
     msp = getattr(desenho, "modelspace", None)
     gravar(caminho, paredes, saida, info["fator_m"], msp.doc if msp is not None else None)
-    return {**info, "paredes": len(paredes), "por_sistema": resumo_paredes(paredes),
+    baixas = [{"texto": p.texto_altura, "altura_m": p.altura_texto, "comprimento_m": round(p.comprimento_m, 2),
+               "especificacao": p.especificacao or "A CLASSIFICAR", "ambientes": [x for x in p.lados if x]}
+              for p in paredes if p.altura_texto is not None]
+    return {**info, "paredes": len(paredes), "por_sistema": resumo_paredes(paredes), "paredes_baixas": baixas,
             "aviso": "Pré-classificação automática: material e espessura lidos da arquitetura; chapas, "
                      "perfil e tijolo/bloco inferidos. Confira no CAD antes de gerar a planilha."}
