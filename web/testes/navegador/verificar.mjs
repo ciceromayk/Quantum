@@ -134,6 +134,26 @@ async function main() {
     await pagina.getByRole("heading", { name: /Pavimento verificado/ }).waitFor();
     etapa("empreendimento e pavimento criados");
 
+    // disciplinas do pavimento: todas as abas abrem e um arquivo guardado aparece na lista
+    const disciplinas = pagina.locator("nav.abas-disciplinas button");
+    const nomesDisc = (await disciplinas.allTextContents()).map((t) => t.replace(/\s*\d+$/, "").trim());
+    resultado.disciplinas = nomesDisc;
+    if (nomesDisc.length !== 7) falhas.push(`O pavimento mostra ${nomesDisc.length} disciplinas; esperadas 7 (${nomesDisc.join(", ")}).`);
+    for (const [i, nome] of nomesDisc.entries()) {
+      await disciplinas.nth(i).click();
+      if (!(await telaInteira(`disciplina ${nome}`))) throw new Error("tela quebrada");
+      if (i > 0 && !(await pagina.getByText(/O que falta para o Quantum quantificar/).count()))
+        falhas.push(`A disciplina ${nome} não diz o que falta para quantificar.`);
+    }
+    const pdf = join(o.saida, "forma_verificacao.pdf");
+    writeFileSync(pdf, "%PDF-1.4\n% arquivo de teste da verificação\n%%EOF\n");
+    await disciplinas.filter({ hasText: "Estrutura" }).click();
+    await pagina.locator("input[data-disciplina=estrutura]").setInputFiles(pdf);
+    await pagina.locator(".lista-cortes li", { hasText: "forma_verificacao.pdf" }).waitFor({ timeout: 30_000 });
+    await tela("0-disciplina-estrutura");
+    await disciplinas.filter({ hasText: "Arquitetura" }).click();
+    etapa(`disciplinas abertas (${nomesDisc.join(", ")}) e arquivo guardado na Estrutura`);
+
     const limite = o.minutos * 60_000;
     if (o.cortes.length) {
       await pagina.locator("input[type=file][multiple]").setInputFiles(o.cortes);
@@ -167,6 +187,12 @@ async function main() {
       throw new Error("tempo esgotado");
     }
     etapa(`análise concluída em ${resultado.segundos_analise} s`);
+
+    // Alvenarias aponta para a análise da arquitetura, de onde sai a planta falada
+    await disciplinas.filter({ hasText: "Alvenarias" }).click();
+    if (!(await pagina.getByRole("link", { name: /abrir a análise R\d+/ }).count()))
+      falhas.push("A disciplina Alvenarias não leva à análise da planta de arquitetura.");
+    await disciplinas.filter({ hasText: "Arquitetura" }).click();
 
     await pagina.getByRole("link", { name: "Abrir análise" }).first().click();
     await pagina.locator("nav.abas").waitFor({ timeout: 60_000 });

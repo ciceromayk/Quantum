@@ -163,6 +163,20 @@ A interface em `web/` roda **inteira no navegador**: o mesmo núcleo Python é e
   AC1032, usado até as versões atuais); anteriores são experimentais. Se uma versão não for lida, o
   site pede para exportar DXF. O Quantum **não grava DWG**: a saída continua sendo o DXF pequeno só
   com as camadas novas, para anexar como xref.
+- Cadastro em três níveis: **empreendimento > pavimento > disciplina**. Cada pavimento tem as
+  disciplinas Arquitetura, Alvenarias, Esquadrias, Estrutura, Instalações elétricas,
+  Hidrossanitárias e Incêndio, cada uma com seus arquivos. Situação hoje:
+
+  | Disciplina | O Quantum hoje |
+  |---|---|
+  | Arquitetura | Quantifica: plantas de acabamentos e cortes (piso, forro, rodapé, revestimento, DXF de acabamentos). |
+  | Alvenarias | Em parte: a planta falada de paredes e painéis sai da planta de arquitetura; a planta de alvenaria enviada fica guardada. |
+  | Esquadrias | Em parte: os vãos da planta de arquitetura entram no desconto; o quadro de esquadrias enviado fica guardado. |
+  | Estrutura, Elétricas, Hidrossanitárias, Incêndio | Só guardam os arquivos (DXF, DWG, .zip ou PDF, como enviados). |
+
+  O que falta para quantificar cada disciplina está na própria tela e em
+  `web/src/disciplinas.ts`. Nada dessas disciplinas entra no relatório antes de existir a regra
+  e o dado técnico: o Quantum não estima quantidade sem eles.
 - O desenho **não sai do computador** de quem usa. Projetos, análises e relatórios ficam no
   IndexedDB daquele navegador.
 - Para backup ou para levar a outro computador, use **Exportar** (gera um `.json` sem o DXF) e

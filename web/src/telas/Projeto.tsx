@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { ACEITOS, api, DWG_GRANDE_MB, Pavimento, PLANTA_GRANDE_MB, preparoInterrompido, Projeto } from "../api";
+import { ACEITOS, ACEITOS_DISCIPLINA, api, DWG_GRANDE_MB, Pavimento, PLANTA_GRANDE_MB, preparoInterrompido, Projeto } from "../api";
+import { DISCIPLINAS, type Disciplina, type InfoDisciplina, infoDisciplina, SITUACAO } from "../disciplinas";
 import { dataHora, STATUS } from "../formato";
 import Excluir from "../Excluir";
 import { perguntaProjeto } from "./Projetos";
@@ -99,7 +100,12 @@ export default function ProjetoTela({ id }: { id: number }) {
         </form>
       </section>
 
-      {projeto.pavimentos.length === 0 && <p className="discreto">Adicione um pavimento para enviar o desenho (DXF ou DWG).</p>}
+      {projeto.pavimentos.length === 0 && (
+        <p className="discreto">
+          Adicione um pavimento. Cada pavimento recebe os arquivos por disciplina: Arquitetura (acabamentos e cortes), Alvenarias,
+          Esquadrias, Estrutura, Instalações elétricas, Hidrossanitárias e Incêndio.
+        </p>
+      )}
       {projeto.pavimentos.map((p) => (
         <PavimentoCartao key={p.id} pav={p} aoMudar={carregar} />
       ))}
@@ -108,10 +114,65 @@ export default function ProjetoTela({ id }: { id: number }) {
 }
 
 function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void }) {
+  const [disciplina, setDisciplina] = useState<Disciplina>("arquitetura");
+  const [erro, setErro] = useState("");
+  const params = Object.entries(pav.parametros);
+  const contagem = (d: Disciplina) =>
+    pav.documentos.filter((x) => x.disciplina === d).length + (d === "arquitetura" ? pav.analises.length + pav.cortes.length : 0);
+  const total = DISCIPLINAS.reduce((n, d) => n + contagem(d.chave), 0);
+
+  return (
+    <section className="cartao">
+      <div className="cartao-topo">
+        <div>
+          <h2>
+            {pav.nome} <span className="selo">× {pav.repeticoes}</span>
+          </h2>
+          <p className="discreto">
+            {params.length ? params.map(([k, v]) => `${k} = ${v}${v === "teto" ? "" : " m"}`).join(" · ") : "Sem parâmetros informados"}
+            {pav.unidade && ` · unidade ${pav.unidade}`}
+          </p>
+        </div>
+        <span className="acoes-linha">
+          <Excluir
+            rotulo="Excluir pavimento"
+            pergunta={`Excluir o pavimento "${pav.nome}" com todos os ${total} arquivo${total === 1 ? "" : "s"} das disciplinas (${pav.analises.length} planta${pav.analises.length === 1 ? "" : "s"} de arquitetura, ${pav.cortes.length} corte${pav.cortes.length === 1 ? "" : "s"}, ${pav.documentos.length} de outras disciplinas) e as análises? Não dá para desfazer.`}
+            aoConfirmar={() => api.excluirPavimento(pav.id).then(aoMudar)}
+            aoErrar={setErro}
+          />
+        </span>
+      </div>
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      <nav className="abas abas-disciplinas" aria-label={`Disciplinas do pavimento ${pav.nome}`}>
+        {DISCIPLINAS.map((d) => {
+          const n = contagem(d.chave);
+          return (
+            <button
+              key={d.chave}
+              className={disciplina === d.chave ? "ativa" : ""}
+              aria-current={disciplina === d.chave ? "page" : undefined}
+              title={`${d.nome}: ${SITUACAO[d.situacao].toLowerCase()}`}
+              onClick={() => setDisciplina(d.chave)}
+            >
+              {d.nome} <span className="contagem">{n}</span>
+            </button>
+          );
+        })}
+      </nav>
+      {disciplina === "arquitetura" ? (
+        <Arquitetura pav={pav} aoMudar={aoMudar} />
+      ) : (
+        <OutraDisciplina key={disciplina} info={infoDisciplina(disciplina)} pav={pav} aoMudar={aoMudar} />
+      )}
+    </section>
+  );
+}
+
+/** Arquitetura: plantas de acabamentos (processadas pelo motor) e cortes para as alturas. */
+function Arquitetura({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void }) {
   const [enviando, setEnviando] = useState(false);
   const [etapa, setEtapa] = useState("");
   const [erro, setErro] = useState("");
-
   const [aviso, setAviso] = useState("");
 
   async function enviar(arquivo: File | undefined) {
@@ -135,49 +196,36 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
     }
   }
 
-  const params = Object.entries(pav.parametros);
   const analises = [...pav.analises].reverse();
 
   return (
-    <section className="cartao">
-      <div className="cartao-topo">
+    <div className="disciplina">
+      <div className="cortes-topo">
         <div>
-          <h2>
-            {pav.nome} <span className="selo">× {pav.repeticoes}</span>
-          </h2>
-          <p className="discreto">
-            {params.length ? params.map(([k, v]) => `${k} = ${v}${v === "teto" ? "" : " m"}`).join(" · ") : "Sem parâmetros informados"}
-            {pav.unidade && ` · unidade ${pav.unidade}`}
-          </p>
+          <strong>Plantas de acabamentos</strong> <span className="selo sev-ok">{SITUACAO.quantifica}</span>
+          <p className="discreto pequeno">{infoDisciplina("arquitetura").hoje}</p>
         </div>
-        <span className="acoes-linha">
-          <Excluir
-            rotulo="Excluir pavimento"
-            pergunta={`Excluir o pavimento "${pav.nome}" com ${pav.analises.length} arquivo${pav.analises.length === 1 ? "" : "s"} de planta, ${pav.cortes.length} corte${pav.cortes.length === 1 ? "" : "s"} e as análises? Não dá para desfazer.`}
-            aoConfirmar={() => api.excluirPavimento(pav.id).then(aoMudar)}
-            aoErrar={setErro}
+        <label className={`botao ${enviando ? "desativado" : ""}`}>
+          {enviando ? etapa || "Enviando…" : "Enviar DXF / DWG"}
+          <input
+            type="file"
+            accept={ACEITOS}
+            hidden
+            disabled={enviando}
+            onChange={(e) => {
+              enviar(e.target.files?.[0]);
+              e.target.value = "";
+            }}
           />
-          <label className={`botao ${enviando ? "desativado" : ""}`}>
-            {enviando ? etapa || "Enviando…" : "Enviar DXF / DWG"}
-            <input
-              type="file"
-              accept={ACEITOS}
-              hidden
-              disabled={enviando}
-              onChange={(e) => {
-                enviar(e.target.files?.[0]);
-                e.target.value = "";
-              }}
-            />
-          </label>
-        </span>
+        </label>
       </div>
       {erro && <p className="erro" role="alert">{erro}</p>}
       {aviso && <p className="discreto pequeno">{aviso}</p>}
       <Cortes pav={pav} aoMudar={aoMudar} aoErrar={setErro} />
       {analises.length === 0 ? (
         <p className="discreto">
-          Nenhum arquivo enviado. Envie o pavimento em DXF, DWG ou .zip com um deles (até 500 MB). Só o espaço do modelo (Model) é lido.
+          Nenhuma planta de arquitetura enviada. Envie o pavimento em DXF, DWG ou .zip com um deles (até 500 MB). Só o espaço do modelo
+          (Model) é lido.
         </p>
       ) : (
         <table className="tabela">
@@ -232,7 +280,102 @@ function PavimentoCartao({ pav, aoMudar }: { pav: Pavimento; aoMudar: () => void
           </tbody>
         </table>
       )}
-    </section>
+    </div>
+  );
+}
+
+/** Alvenarias, Esquadrias, Estrutura, Elétrica, Hidrossanitárias e Incêndio: arquivos guardados e o que falta para quantificar. */
+function OutraDisciplina({ info, pav, aoMudar }: { info: InfoDisciplina; pav: Pavimento; aoMudar: () => void }) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const docs = pav.documentos.filter((d) => d.disciplina === info.chave);
+  const ultimaPlanta = [...pav.analises].reverse().find((a) => a.status === "concluida");
+
+  async function enviar(arquivos: FileList | null) {
+    if (!arquivos?.length) return;
+    setErro("");
+    setEnviando(true);
+    try {
+      for (const a of Array.from(arquivos)) await api.enviarDocumento(pav.id, info.chave, a);
+    } catch (err) {
+      setErro((err as Error).message);
+    } finally {
+      setEnviando(false);
+      aoMudar();
+    }
+  }
+
+  return (
+    <div className="disciplina">
+      <div className="cortes-topo">
+        <div>
+          <strong>{info.nome}</strong>{" "}
+          <span className={`selo ${info.situacao === "parcial" ? "sev-alerta" : ""}`}>{SITUACAO[info.situacao]}</span>
+          <p className="discreto pequeno">{info.hoje}</p>
+        </div>
+        <label className={`botao secundario ${enviando ? "desativado" : ""}`}>
+          {enviando ? "Guardando…" : `Adicionar arquivos de ${info.nome.toLowerCase()}`}
+          <input
+            type="file"
+            accept={ACEITOS_DISCIPLINA}
+            multiple
+            hidden
+            disabled={enviando}
+            data-disciplina={info.chave}
+            onChange={(e) => {
+              enviar(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      {(info.chave === "alvenarias" || info.chave === "esquadrias") && (
+        <p className="pequeno">
+          {ultimaPlanta ? (
+            <>
+              Da planta de arquitetura: <a href={`#/analises/${ultimaPlanta.id}`}>abrir a análise R{ultimaPlanta.revisao}</a>
+              {info.chave === "alvenarias" ? " para baixar a planta falada e a planilha de paredes e painéis." : " para ver os vãos contados."}
+            </>
+          ) : (
+            "Envie a planta de arquitetura na aba Arquitetura: é dela que sai o que já é medido nesta disciplina."
+          )}
+        </p>
+      )}
+      {docs.length === 0 ? (
+        <p className="discreto">
+          Nenhum arquivo de {info.nome.toLowerCase()} neste pavimento. Adicione {info.arquivos} em DXF, DWG, .zip ou PDF (até 500 MB cada).
+          Os arquivos ficam guardados como enviados, só neste navegador.
+        </p>
+      ) : (
+        <ul className="lista-cortes">
+          {docs.map((d) => (
+            <li key={d.id}>
+              {d.nome} <span className="discreto pequeno">({mb(d.tamanho)} MB, {d.formato}, enviado em {dataHora(d.criado_em)})</span>
+              <Excluir
+                pergunta={`Excluir ${d.nome} de ${info.nome}? Não dá para desfazer.`}
+                aoConfirmar={() => api.removerDocumento(d.id).then(aoMudar)}
+                aoErrar={setErro}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {info.falta.length > 0 && (
+        <div className="falta">
+          <strong className="pequeno">O que falta para o Quantum quantificar {info.nome.toLowerCase()}</strong>
+          <ul className="pequeno">
+            {info.falta.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+          <p className="discreto pequeno">
+            Enquanto isso, nada desta disciplina entra no relatório: o Quantum não estima quantidade sem o dado técnico. Quando a extração
+            existir, os números serão estimativas técnicas e exigirão revisão humana na obra.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
