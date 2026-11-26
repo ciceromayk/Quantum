@@ -625,3 +625,40 @@ input[type="checkbox"] {
     flex: 1 1 100%;
   }
 }
+
+/* Disciplinas do pavimento */
+.abas-disciplinas {
+  margin: 12px 0 0;
+}
+.abas-disciplinas button {
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.abas-disciplinas .contagem {
+  display: inline-block;
+  min-width: 18px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--fundo);
+  color: var(--discreto);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.disciplina {
+  padding-top: 12px;
+}
+.disciplina .cortes-topo p {
+  margin: 4px 0 0;
+}
+.falta {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--borda);
+  background: var(--fundo);
+  border-radius: 6px;
+}
+.falta ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}

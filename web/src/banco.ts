@@ -2,8 +2,8 @@
 // use Exportar/Importar projeto para levar para outro computador ou fazer backup.
 
 const NOME = "quantum";
-const VERSAO = 2; // v2: loja "cortes"
-export const LOJAS = ["projetos", "pavimentos", "analises", "arquivos", "relatorios", "cortes"] as const;
+const VERSAO = 3; // v2: loja "cortes"; v3: loja "documentos" (arquivos por disciplina)
+export const LOJAS = ["projetos", "pavimentos", "analises", "arquivos", "relatorios", "cortes", "documentos"] as const;
 export type Loja = (typeof LOJAS)[number];
 
 let conexao: Promise<IDBDatabase> | null = null;

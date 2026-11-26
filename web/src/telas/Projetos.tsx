@@ -128,7 +128,7 @@ export default function Projetos() {
       {espaco && (
         <p className="discreto pequeno">
           Espaço usado pelo Quantum neste navegador: {tamanho(espaco.usado)}
-          {espaco.total > 0 && ` de ${tamanho(espaco.total)} disponíveis`}. Excluir revisões antigas, cortes ou empreendimentos libera esse
+          {espaco.total > 0 && ` de ${tamanho(espaco.total)} disponíveis`}. Excluir revisões antigas, cortes, arquivos de disciplina ou empreendimentos libera esse
           espaço.
         </p>
       )}
@@ -147,10 +147,12 @@ export function tamanho(bytes: number) {
 export function perguntaProjeto(p: Projeto) {
   const revisoes = p.pavimentos.reduce((n, x) => n + x.analises.length, 0);
   const cortes = p.pavimentos.reduce((n, x) => n + x.cortes.length, 0);
+  const docs = p.pavimentos.reduce((n, x) => n + x.documentos.length, 0);
   const partes = [
     `${p.pavimentos.length} pavimento${p.pavimentos.length === 1 ? "" : "s"}`,
-    `${revisoes} arquivo${revisoes === 1 ? "" : "s"} de planta`,
+    `${revisoes} arquivo${revisoes === 1 ? "" : "s"} de planta de arquitetura`,
     `${cortes} corte${cortes === 1 ? "" : "s"}`,
+    `${docs} arquivo${docs === 1 ? "" : "s"} das outras disciplinas`,
   ];
   return `Excluir "${p.nome}" com ${partes.join(", ")} e todas as análises? Não dá para desfazer. Use Exportar antes se quiser guardar os resultados.`;
 }

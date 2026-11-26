@@ -3,7 +3,8 @@
 // processamento roda no Web Worker com Pyodide (motor.worker.ts).
 
 import { banco, type Loja } from "./banco";
-import { prepararDesenho, type ConverterDwg } from "./conversao";
+import { formatoDocumento, prepararDesenho, type ConverterDwg } from "./conversao";
+import { disciplinaDe, ehDisciplina, type Disciplina } from "./disciplinas";
 
 export type Severidade = "bloqueante" | "alerta" | "info";
 export type Status = "na_fila" | "processando" | "concluida" | "erro";
@@ -28,8 +29,26 @@ export interface Pavimento {
   repeticoes: number;
   parametros: Parametros;
   unidade: string | null;
+  /** Plantas de arquitetura (acabamentos) processadas pelo motor. */
   analises: AnaliseResumo[];
+  /** Cortes da arquitetura, para as alturas de revestimento. */
   cortes: CorteResumo[];
+  /** Arquivos das demais disciplinas (e de alvenaria/esquadria), guardados como enviados. */
+  documentos: DocumentoResumo[];
+}
+
+/** Arquivo de uma disciplina, guardado neste navegador como foi enviado (ainda sem extração). */
+export interface DocumentoResumo {
+  id: number;
+  disciplina: Disciplina;
+  nome: string;
+  tamanho: number;
+  formato: string;
+  criado_em: string;
+}
+interface DocumentoReg extends DocumentoResumo {
+  pavimento_id: number;
+  dados: Blob;
 }
 
 /** Corte/vista em DXF usado para ler alturas de revestimento do pavimento. */
@@ -167,7 +186,7 @@ export interface AnaliseDetalhe extends AnaliseResumo {
 }
 
 type ProjetoReg = Omit<Projeto, "pavimentos">;
-type PavimentoReg = Omit<Pavimento, "analises" | "cortes">;
+type PavimentoReg = Omit<Pavimento, "analises" | "cortes" | "documentos">;
 type AnaliseReg = Omit<AnaliseDetalhe, "resultado">;
 interface RelatorioReg {
   resultado: Resultado;
@@ -218,6 +237,8 @@ const PARAMETROS_CONHECIDOS: Record<string, string> = {
 
 /** Formatos aceitos no envio (planta e cortes). */
 export const ACEITOS = ".dxf,.dwg,.zip";
+/** Formatos aceitos nos arquivos das disciplinas (guardados como enviados; o PDF serve de consulta). */
+export const ACEITOS_DISCIPLINA = ".dxf,.dwg,.zip,.pdf";
 
 /** DWG vira DXF num worker próprio, encerrado no fim para liberar a memória do WebAssembly. */
 const converterDwg: ConverterDwg = (dwg, versao) =>
@@ -395,9 +416,13 @@ async function montarPavimento(p: PavimentoReg, analises: AnaliseReg[]): Promise
   const cortes = (await banco.todos<CorteReg>("cortes"))
     .filter((c) => c.pavimento_id === p.id)
     .map(({ id, nome, tamanho, criado_em, conversao }) => ({ id, nome, tamanho, criado_em, conversao }));
+  const documentos = (await banco.todos<DocumentoReg>("documentos"))
+    .filter((d) => d.pavimento_id === p.id)
+    .map(({ id, disciplina, nome, tamanho, formato, criado_em }) => ({ id, disciplina: disciplinaDe({ disciplina }), nome, tamanho, formato, criado_em }));
   return {
     ...p,
     cortes,
+    documentos,
     analises: analises
       .filter((a) => a.pavimento_id === p.id)
       .sort((x, y) => x.revisao - y.revisao)
@@ -449,7 +474,12 @@ async function chavesDosPavimentos(ids: number[]): Promise<[Loja, number][]> {
   const presa = analises.find(ocupada);
   if (presa) throw new Error(`R${presa.revisao} (${presa.arquivo_nome}) ainda está em processamento. Aguarde terminar para excluir.`);
   const cortes = (await banco.todos<CorteReg>("cortes")).filter((c) => pavs.has(c.pavimento_id));
-  return [...analises.flatMap((a) => chavesDaAnalise(a.id)), ...cortes.map((c) => ["cortes", c.id] as [Loja, number])];
+  const docs = (await banco.todos<DocumentoReg>("documentos")).filter((d) => pavs.has(d.pavimento_id));
+  return [
+    ...analises.flatMap((a) => chavesDaAnalise(a.id)),
+    ...cortes.map((c) => ["cortes", c.id] as [Loja, number]),
+    ...docs.map((d) => ["documentos", d.id] as [Loja, number]),
+  ];
 }
 
 function nomeBase(a: AnaliseReg) {
@@ -481,7 +511,7 @@ export const api = {
     if (!Number.isInteger(d.repeticoes) || d.repeticoes < 1 || d.repeticoes > 200) throw new Error("Repetições entre 1 e 200");
     const reg = { projeto_id: projetoId, nome: d.nome.trim(), repeticoes: d.repeticoes, parametros: {}, unidade: null };
     const id = await banco.gravar("pavimentos", reg);
-    return { ...reg, id, analises: [], cortes: [] } as Pavimento;
+    return { ...reg, id, analises: [], cortes: [], documentos: [] } as Pavimento;
   },
 
   pavimento: async (id: number) => {
@@ -542,6 +572,23 @@ export const api = {
     }
   },
   removerCorte: async (id: number) => banco.apagar("cortes", id),
+
+  /**
+   * Guarda um arquivo de disciplina no pavimento, como foi enviado (sem converter: a extração de
+   * quantitativos dessas disciplinas ainda não existe). Confere só se é desenho ou PDF de verdade.
+   */
+  enviarDocumento: async (pavimentoId: number, disciplina: string, arquivo: File) => {
+    exigir(await banco.obter("pavimentos", pavimentoId), "Pavimento");
+    if (!ehDisciplina(disciplina)) throw new Error(`Disciplina desconhecida: ${disciplina}`);
+    const formato = await formatoDocumento(arquivo, arquivo.name);
+    const reg = { pavimento_id: pavimentoId, disciplina, nome: arquivo.name, tamanho: arquivo.size, formato, criado_em: agora(), dados: arquivo };
+    try {
+      await banco.gravar("documentos", reg);
+    } catch (e) {
+      throw new Error(`Não foi possível guardar ${arquivo.name} no navegador (${(e as Error).message || e}). Libere espaço em disco ou remova arquivos antigos.`);
+    }
+  },
+  removerDocumento: async (id: number) => banco.apagar("documentos", id),
 
   /** Apaga uma revisão da planta: o DXF guardado, a análise e os relatórios gerados. */
   excluirAnalise: async (id: number) => {

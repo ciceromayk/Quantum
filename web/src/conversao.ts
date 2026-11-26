@@ -271,3 +271,17 @@ export async function prepararDesenho(
   if (ext === "dwg") throw new ErroArquivo(`Este arquivo .dwg não tem a assinatura de um DWG válido. ${PEDIR_DXF}`);
   throw new ErroArquivo("Arquivo não reconhecido. Envie um .dxf, um .dwg ou um .zip com um deles.");
 }
+
+const NOME_FORMATO: Partial<Record<Formato, string>> = { dxf: "DXF", dxf_binario: "DXF binário", dwg: "DWG", zip: ".zip" };
+
+/**
+ * Arquivo de disciplina guardado como foi enviado: confere o conteúdo (não só a extensão) e devolve
+ * o formato por extenso. Aceita DXF, DWG, .zip e PDF (este só para consulta).
+ */
+export async function formatoDocumento(arquivo: Blob, nome: string): Promise<string> {
+  if (arquivo.size > LIMITE_MB * MB) throw new ErroArquivo(`${nome}: arquivo maior que ${LIMITE_MB} MB.`);
+  if (latin1(new Uint8Array(await arquivo.slice(0, 5).arrayBuffer())) === "%PDF-") return "PDF";
+  const rotulo = NOME_FORMATO[(await detectar(arquivo)).formato];
+  if (rotulo) return rotulo;
+  throw new ErroArquivo(`${nome}: arquivo não reconhecido. Envie um .dxf, .dwg, .zip ou .pdf.`);
+}
